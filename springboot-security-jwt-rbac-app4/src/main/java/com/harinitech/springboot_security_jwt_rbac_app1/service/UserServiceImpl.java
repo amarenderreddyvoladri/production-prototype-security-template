@@ -1,0 +1,437 @@
+package com.harinitech.springboot_security_jwt_rbac_app1.service;
+
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.OtpToken;
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditAction;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditStatus;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.OtpPurpose;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.Status;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.UserResponseDto;
+import com.harinitech.springboot_security_jwt_rbac_app1.passwordreset.PasswordResetTokenRepository;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.OtpRepository;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.RoleRepository;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * ✅ PRODUCTION UserServiceImpl — fully userId-based.
+ *
+ * Principal contract (matches JwtFilter + all other services): SecurityContext
+ * principal → userId (Long as String) getCurrentUser() →
+ * Long.parseLong(principal) → userRepository.findById()
+ *
+ * This means if a user changes their email (username), the active session
+ * continues working without any interruption.
+ */
+@Slf4j
+@Transactional
+@Service
+public class UserServiceImpl implements IUserService {
+
+	// ======================== DEPENDENCIES ========================
+
+	@Autowired
+	private UserRepository userRepository;
+
+	@Autowired
+	private RoleRepository roleRepository;
+
+	@Autowired
+	private OtpRepository otpRepository;
+
+	@Autowired
+	private UserTokenRepository userTokenRepository;
+
+	@Autowired
+	private PasswordResetTokenRepository passwordResetTokenRepository;
+
+	@Autowired
+	private EmailService emailService;
+
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+
+	@Autowired
+	private AuditService auditService;
+
+	// ======================== 👥 USERS ========================
+
+	@Override
+	@Transactional(readOnly = true)
+	public ResponseEntity<?> getAllUsers() {
+
+		List<UserResponseDto> users = userRepository.findAll().stream()
+				.map(user -> UserResponseDto.builder().userId(user.getId()).username(user.getUsername())
+						.role(user.getRole().getName()).status(user.getStatus()).enabled(user.isEnabled())
+						.lastLoginAt(user.getLastLoginAt()).build())
+				.toList();
+
+		log.info("USERS FETCHED | requestedByUserId={} | count={}", getCurrentUser().getId(), users.size());
+
+		auditService.log(AuditAction.VIEW_USERS, AuditStatus.SUCCESS, "Fetched all users successfully", null);
+
+		return ResponseEntity.ok(users);
+	}
+
+	// ======================== 📩 OTP / REGISTRATION ========================
+
+	@Override
+	public ResponseEntity<?> sendRegistrationOtp(String email) {
+
+		String normalizedEmail = normalize(email);
+
+		if (userRepository.findByUsername(normalizedEmail).isPresent()) {
+			return ResponseEntity.badRequest().body("An account with email '" + normalizedEmail + "' already exists.");
+		}
+
+		String otp = generateOtp();
+
+		OtpToken token = OtpToken.builder().username(normalizedEmail).otpHash(passwordEncoder.encode(otp)) // ✅ HASHED
+																											// OTP
+				.expiryTime(Instant.now().plusSeconds(300)) // ✅ Instant
+				.used(false).attempts(0).purpose(OtpPurpose.REGISTER) // ✅ PURPOSE
+				.build();
+
+		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+
+		otpRepository.save(token);
+
+		emailService.sendOtp(normalizedEmail, otp);
+
+		log.info("OTP SENT | email={} | purpose=REGISTER", normalizedEmail);
+
+		auditService.log(AuditAction.REGISTRATION_OTP_SENT, AuditStatus.SUCCESS, "Registration OTP sent successfully",
+				null);
+
+		return ResponseEntity
+				.ok(Map.of("message", "OTP sent successfully", "email", normalizedEmail, "expirySeconds", 300));
+	}
+
+	@Override
+	public ResponseEntity<?> registerWithOtp(RegisterRequest request) {
+
+		validateOtp(request.getUsername(), request.getOtp());
+
+		if (userRepository.findByUsername(normalize(request.getUsername())).isPresent()) {
+			throw new RuntimeException("User already exists.");
+		}
+
+		createUser(normalize(request.getUsername()), request.getPassword(), "USER");
+
+		log.info("USER REGISTERED | email={}", request.getUsername());
+
+		auditService.log(AuditAction.REGISTER, AuditStatus.SUCCESS, "New user registered successfully", null);
+
+		return ResponseEntity.ok(Map.of("message", "User registered successfully", "username", request.getUsername()));
+	}
+
+	// ======================== 👤 PROFILE ========================
+
+	@Override
+	public ResponseEntity<?> getCurrentUserProfile() {
+
+		User user = getCurrentUser();
+
+		UserResponseDto dto = UserResponseDto.builder().userId(user.getId()).username(user.getUsername())
+				.role(user.getRole().getName()).status(user.getStatus()).enabled(user.isEnabled())
+				.lastLoginAt(user.getLastLoginAt()).build();
+
+		auditService.log(AuditAction.VIEW_PROFILE, AuditStatus.SUCCESS, "User viewed profile", null);
+
+		return ResponseEntity.ok(dto);
+	}
+	// ======================== 🔑 PASSWORD ========================
+
+	@Override
+	public ResponseEntity<?> changePassword(String oldPassword, String newPassword) {
+
+		User user = getCurrentUser();
+
+		if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+			return ResponseEntity.badRequest().body("Old password is incorrect. Please try again.");
+		}
+
+		if (passwordEncoder.matches(newPassword, user.getPassword())) {
+			return ResponseEntity.badRequest().body("New password cannot be the same as your current password.");
+		}
+
+		user.setPassword(passwordEncoder.encode(newPassword));
+		user.setPasswordChangedAt(Instant.now()); // ✅ NEW
+		user.setForcePasswordChange(false); // ✅ RESET FLAG
+		userRepository.save(user);
+
+		// Force logout from all devices after password change (security best practice)
+		revokeAllActiveTokens(user);
+		SecurityContextHolder.clearContext();
+
+		log.info("PASSWORD CHANGED | userId={}", user.getId());
+
+		auditService.log(AuditAction.PASSWORD_CHANGED, AuditStatus.SUCCESS, "Password changed successfully", null);
+
+		return ResponseEntity.ok(Map.of("message", "Password changed successfully", "userId", user.getId()));
+	}
+
+	@Override
+	public ResponseEntity<?> forgotPassword(String username) {
+
+		User user = userRepository.findByUsername(normalize(username)).orElse(null);
+
+		if (user == null) {
+			// Do NOT reveal user existence
+			return ResponseEntity.ok("If the account exists, an OTP has been sent.");
+		}
+
+		String otp = generateOtp();
+
+		OtpToken token = OtpToken.builder().username(user.getUsername()).otpHash(passwordEncoder.encode(otp))
+				.expiryTime(Instant.now().plusSeconds(300)).attempts(0).used(false).purpose(OtpPurpose.RESET_PASSWORD)
+				.build();
+
+		otpRepository.save(token);
+
+		emailService.sendOtp(user.getUsername(), otp);
+
+		log.info("RESET OTP REQUEST | email={} | userExists={}", username, user != null);
+
+		auditService.log(AuditAction.PASSWORD_RESET_REQUEST, AuditStatus.SUCCESS, "Password reset OTP requested", null);
+
+		return ResponseEntity.ok("Password reset OTP sent. It expires in 5 minutes.");
+	}
+
+	@Override
+	public ResponseEntity<?> resetPassword(String username, String otp, String newPassword) {
+
+		validateOtpForPurpose(username, otp, OtpPurpose.RESET_PASSWORD);
+
+		User user = getUserByUsername(username);
+
+		if (passwordEncoder.matches(newPassword, user.getPassword())) {
+			throw new RuntimeException("New password cannot be same as old password.");
+		}
+
+		user.setPassword(passwordEncoder.encode(newPassword));
+		user.setPasswordChangedAt(Instant.now());
+
+		userRepository.save(user);
+
+		revokeAllActiveTokens(user);
+		SecurityContextHolder.clearContext();
+
+		log.info("PASSWORD RESET SUCCESS | userId={}", user.getId());
+
+		auditService.log(AuditAction.PASSWORD_RESET, AuditStatus.SUCCESS, "Password reset successfully", null);
+
+		return ResponseEntity.ok(Map.of("message", "Password reset successfully", "userId", user.getId()));
+	}
+
+	private void validateOtpForPurpose(String email, String otpInput, OtpPurpose purpose) {
+
+		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+				.orElseThrow(() -> new RuntimeException("No OTP found."));
+
+		email = normalize(email);
+
+		if (token.getAttempts() >= 5) {
+
+			log.warn("OTP BLOCKED | email={} | attempts={}", email, token.getAttempts());
+
+			throw new RuntimeException("Too many OTP attempts. Request new OTP.");
+		}
+
+		if (token.getPurpose() != purpose) {
+			log.warn("OTP PURPOSE MISMATCH | email={} | expected={} | actual={}", email, purpose, token.getPurpose());
+			throw new RuntimeException("Invalid OTP type.");
+		}
+
+		if (token.isUsed()) {
+			log.warn("OTP REUSE DETECTED | email={}", email);
+			throw new RuntimeException("OTP already used.");
+		}
+
+		if (token.getExpiryTime().isBefore(Instant.now())) {
+			log.warn("OTP EXPIRED | email={}", email);
+			throw new RuntimeException("OTP has expired.");
+		}
+
+		if (!passwordEncoder.matches(otpInput, token.getOtpHash())) {
+
+			token.setAttempts(token.getAttempts() + 1);
+			token.setLastAttemptAt(Instant.now());
+
+			otpRepository.save(token);
+
+			log.warn("OTP FAILED | email={} | attempts={}", email, token.getAttempts());
+
+			auditService.log(AuditAction.OTP_FAILED, AuditStatus.FAILED, "Invalid OTP entered", null);
+
+			throw new RuntimeException("Incorrect OTP.");
+		}
+		token.setUsed(true);
+		otpRepository.invalidateAllActiveOtps(email);
+		otpRepository.save(token);
+	}
+
+	// ======================== 🧰 PRIVATE HELPERS ========================
+
+	private void validateOtp(String email, String otpInput) {
+
+		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+				.orElseThrow(() -> new RuntimeException("No OTP found for '" + email + "'. Please request a new OTP."));
+
+		String normalizedEmail = normalize(email);
+
+		// ✅ PURPOSE CHECK
+		if (token.getPurpose() != OtpPurpose.REGISTER) {
+			throw new RuntimeException("Invalid OTP type.");
+		}
+
+		if (token.isUsed()) {
+			throw new RuntimeException("This OTP has already been used.");
+		}
+
+		if (token.getExpiryTime().isBefore(Instant.now())) {
+			throw new RuntimeException("OTP has expired.");
+		}
+
+		// ✅ ATTEMPT TRACKING
+		if (token.getAttempts() >= 5) {
+			log.warn("OTP BLOCKED | email={} | attempts={}", email, token.getAttempts());
+			throw new RuntimeException("Too many attempts. Request new OTP.");
+		}
+
+		// ✅ HASH CHECK
+		if (!passwordEncoder.matches(otpInput, token.getOtpHash())) {
+
+			token.setAttempts(token.getAttempts() + 1);
+			token.setLastAttemptAt(Instant.now());
+			otpRepository.save(token);
+
+			log.warn("OTP FAILED | email={} | attempts={}", normalizedEmail, token.getAttempts());
+
+			auditService.log(AuditAction.OTP_FAILED, AuditStatus.FAILED, "Invalid registration OTP entered", null);
+
+			throw new RuntimeException("Incorrect OTP.");
+		}
+
+		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+
+		token.setUsed(true);
+
+		otpRepository.save(token);
+
+		log.info("OTP VERIFIED SUCCESS | email={} | purpose=REGISTER", email);
+	}
+
+	private User createUser(String email, String password, String roleName) {
+
+		Role role = getRole(roleName);
+
+		User user = new User();
+		user.setUsername(normalize(email));
+		user.setPassword(passwordEncoder.encode(password));
+		user.setRole(role);
+		user.setStatus(Status.ACTIVE);
+		user.setEnabled(true);
+
+		// ✅ NEW FIELDS INITIALIZATION
+		user.setAccountLocked(false);
+		user.setFailedLoginAttempts(0);
+		user.setForcePasswordChange(false);
+		user.setPasswordChangedAt(Instant.now());
+
+		User savedUser = userRepository.save(user);
+
+		log.info("USER CREATED | userId={} | role={}", savedUser.getId(), roleName);
+
+		return savedUser;
+	}
+
+	private void revokeAllActiveTokens(User user) {
+		List<UserToken> activeTokens = userTokenRepository.findAllByUserAndRevokedFalseAndExpiredFalse(user);
+		if (activeTokens.isEmpty())
+			return;
+		activeTokens.forEach(t -> {
+			t.setRevoked(true);
+			t.setExpired(true);
+		});
+
+		log.info("TOKENS REVOKED | userId={} | count={}", user.getId(), activeTokens.size());
+
+		userTokenRepository.saveAll(activeTokens);
+	}
+
+	private User getUserByUsername(String username) {
+		return userRepository.findByUsername(normalize(username))
+				.orElseThrow(() -> new RuntimeException("No account found for username: " + username));
+	}
+
+	/**
+	 * ✅ Returns the currently authenticated user from the SecurityContext.
+	 *
+	 * JwtFilter sets userId (Long as String) as the principal. We parse it as Long
+	 * and fetch by ID — NOT by username.
+	 *
+	 * This is username-change-safe: If the user updates their email mid-session,
+	 * this lookup still works because userId (DB PK) never changes.
+	 */
+	private User getCurrentUser() {
+
+		if (SecurityContextHolder.getContext().getAuthentication() == null
+				|| SecurityContextHolder.getContext().getAuthentication().getPrincipal() == null) {
+
+			log.error("SECURITY CONTEXT EMPTY");
+
+			throw new RuntimeException("Authentication required.");
+		}
+
+		Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+		Long userId;
+
+		try {
+
+			userId = Long.parseLong(principal.toString());
+
+		} catch (NumberFormatException e) {
+
+			log.error("INVALID PRINCIPAL FORMAT | principal={}", principal);
+
+			throw new RuntimeException("Invalid authentication principal.");
+		}
+
+		return userRepository.findById(userId).orElseThrow(() -> new RuntimeException("Authenticated user not found."));
+	}
+
+	private Role getRole(String roleName) {
+		return roleRepository.findByName(roleName.toUpperCase())
+				.orElseThrow(() -> new RuntimeException("Role '" + roleName + "' does not exist in the system."));
+	}
+
+	private static final SecureRandom secureRandom = new SecureRandom();
+
+	private String generateOtp() {
+		int otp = secureRandom.nextInt(900000) + 100000;
+		return String.valueOf(otp);
+	}
+
+	private String normalize(String value) {
+		return value == null ? null : value.trim().toLowerCase();
+	}
+}
