@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditAction;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditStatus;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.EmployeeRegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.OtpPurpose;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.Status;
@@ -287,6 +289,62 @@ public class UserServiceImpl implements IUserService {
 		otpRepository.invalidateAllActiveOtps(email);
 		otpRepository.save(token);
 	}
+
+	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
+
+	@Override
+	public ResponseEntity<?> employeeRegistration(EmployeeRegisterRequest request) {
+		String email = normalize(request.getEmail());
+
+		// 1. Validate OTP (reuse existing registration OTP validation)
+		validateOtp(email, request.getOtp());
+
+		// 2. Prevent duplicate accounts
+		if (userRepository.findByUsername(email).isPresent()) {
+			throw new RuntimeException("An account with this email already exists.");
+		}
+
+		// 3. Whitelist allowed employee roles
+		Set<String> allowedRoles = Set.of("EMPLOYEE", "MANAGER", "VENDOR", "HR", "FINANCE", "SUPPORT");
+		String requestedRole = request.getRequestedRole().toUpperCase();
+		if (!allowedRoles.contains(requestedRole)) {
+			throw new RuntimeException("Invalid role requested. Allowed: " + allowedRoles);
+		}
+
+		// 4. Create user in PENDING state (minimal role = USER while pending)
+		Role placeholderRole = getRole("USER");
+		User user = new User();
+		user.setUsername(email);
+		user.setPassword(passwordEncoder.encode(request.getPassword()));
+		user.setRole(placeholderRole);
+		user.setStatus(Status.PENDING_APPROVAL);
+		user.setEnabled(false);
+		user.setAccountLocked(false);
+		user.setForcePasswordChange(false);
+		user.setFailedLoginAttempts(0);
+		user.setPasswordChangedAt(Instant.now());
+		user.setRequestedRole(requestedRole);
+		userRepository.save(user);
+
+		// 5. Notify all ADMINs about new pending registration
+		notifyAdminsOfNewRegistration(user);
+
+		log.info("EMPLOYEE REGISTRATION SUBMITTED | email={} | requestedRole={}", email, requestedRole);
+		auditService.log(AuditAction.REGISTER, AuditStatus.SUCCESS,
+				"Employee registration submitted for role " + requestedRole, null);
+
+		return ResponseEntity.ok(Map.of("message",
+				"Registration submitted. You will receive a confirmation once approved.", "email", email));
+	}
+
+	// Helper: notify all users with ADMIN role
+	private void notifyAdminsOfNewRegistration(User pendingUser) {
+		List<User> admins = userRepository.findAll().stream()
+				.filter(u -> u.getRole() != null && "ADMIN".equals(u.getRole().getName())).toList();
+		admins.forEach(admin -> emailService.sendPendingApprovalNotification(admin.getUsername(), pendingUser));
+	}
+
+	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
 
 	// ======================== 🧰 PRIVATE HELPERS ========================
 

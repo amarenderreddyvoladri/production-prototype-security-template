@@ -57,14 +57,12 @@ public interface IAdminService {
 	 * FORCE_LOGOUT.
 	 */
 	ResponseEntity<?> forceLogoutUser(Long userId);
-	
-	
+
 //	==========================================================================================
-	
+
 	// =========================================================================
 	// 👥 USER MANAGEMENT
 	// =========================================================================
-
 
 	ResponseEntity<?> deleteUserPermanently(Long userId);
 
@@ -107,4 +105,12 @@ public interface IAdminService {
 	ResponseEntity<?> getSystemStatistics();
 
 	ResponseEntity<?> getSecurityStatistics();
+
+	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION MANAGEMENT
+	// ========================
+	ResponseEntity<?> getPendingRegistrations();
+
+	ResponseEntity<?> approveRegistration(Long userId, String assignedRole);
+
+	ResponseEntity<?> rejectRegistration(Long userId, String reason);
 }

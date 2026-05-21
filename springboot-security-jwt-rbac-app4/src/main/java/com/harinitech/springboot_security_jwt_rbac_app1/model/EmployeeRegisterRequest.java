@@ -10,17 +10,19 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class RegisterRequest {
+public class EmployeeRegisterRequest {
 
-	@NotBlank
-	@Email(message = "Invalid email")
-	private String username; // email
+	@NotBlank(message = "Email is required")
+	@Email(message = "Invalid email format")
+	private String email;
 
-	@NotBlank
+	@NotBlank(message = "Password is required")
 	@Size(min = 8, message = "Password must be at least 8 characters")
 	private String password;
 
 	@NotBlank(message = "OTP is required")
 	private String otp;
 
+	@NotBlank(message = "Requested role is required")
+	private String requestedRole;
 }

@@ -1,9 +1,8 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.service;
 
-import org.springframework.http.HttpEntity;
 import org.springframework.http.ResponseEntity;
 
-import com.harinitech.springboot_security_jwt_rbac_app1.model.ApiResponse;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.EmployeeRegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
 
 /**
@@ -28,6 +27,10 @@ public interface IUserService {
 	ResponseEntity<?> forgotPassword(String username);
 
 	ResponseEntity<?> resetPassword(String username, String otp, String newPassword);
+	
+
+    // ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
+    ResponseEntity<?> employeeRegistration(EmployeeRegisterRequest request);
 
 
 }
