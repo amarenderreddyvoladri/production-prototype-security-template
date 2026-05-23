@@ -196,12 +196,13 @@ public class AuthServiceImpl implements IAuthService {
 					"Security breach detected: Reused or invalid refresh token. All sessions terminated.");
 		}
 
-		// Step 3: Check actual expiry timestamp
-		if (token.getRefreshExpiry().isBefore(Instant.now())) {
+		// Step 3: Validate refresh token using JWT itself
+		if (!jwtUtility.isTokenValid(refreshToken)) {
+
 			token.setExpired(true);
 			userTokenRepository.save(token);
-			throw new RuntimeException(
-					"Refresh token expired at " + token.getRefreshExpiry() + ". Please log in again.");
+
+			throw new RuntimeException("Refresh token expired. Please login again.");
 		}
 
 		// Step 4: Build new token pair — ✅ uses userId

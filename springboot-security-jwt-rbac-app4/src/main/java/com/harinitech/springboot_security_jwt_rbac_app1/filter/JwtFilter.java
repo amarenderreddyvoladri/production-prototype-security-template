@@ -31,12 +31,10 @@ public class JwtFilter extends OncePerRequestFilter {
 		this.userTokenRepository = userTokenRepository;
 	}
 
-	private static final org.slf4j.Logger log =
-			org.slf4j.LoggerFactory.getLogger(JwtFilter.class);
+	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JwtFilter.class);
 
 	@Override
-	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-	                                 FilterChain filterChain)
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
 
 		final String authHeader = request.getHeader("Authorization");
@@ -56,8 +54,23 @@ public class JwtFilter extends OncePerRequestFilter {
 
 			// 3. JWT validation (cryptographic check)
 			if (!jwtUtility.isTokenValid(token)) {
+
+				userTokenRepository.findByAccessToken(token).ifPresent(dbToken -> {
+
+					if (!dbToken.isExpired()) {
+
+						dbToken.setExpired(true);
+
+						userTokenRepository.save(dbToken);
+
+						log.info("TOKEN AUTO-EXPIRED | tokenId={}", dbToken.getId());
+					}
+				});
+
 				SecurityContextHolder.clearContext();
+
 				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
 				return;
 			}
 
@@ -65,18 +78,6 @@ public class JwtFilter extends OncePerRequestFilter {
 			UserToken dbToken = userTokenRepository.findByAccessToken(token).orElse(null);
 
 			if (dbToken == null || dbToken.isRevoked() || dbToken.isExpired()) {
-				SecurityContextHolder.clearContext();
-				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-				return;
-			}
-
-			// 5. DB expiry check (critical fix for timing mismatch)
-			if (dbToken.getAccessExpiry() != null &&
-				dbToken.getAccessExpiry().isBefore(java.time.Instant.now())) {
-
-				dbToken.setExpired(true);
-				userTokenRepository.save(dbToken);
-
 				SecurityContextHolder.clearContext();
 				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 				return;
@@ -103,8 +104,8 @@ public class JwtFilter extends OncePerRequestFilter {
 			}
 
 			// 8. Set authentication
-			UsernamePasswordAuthenticationToken authToken =
-					new UsernamePasswordAuthenticationToken(userId.toString(), null, authorities);
+			UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userId.toString(),
+					null, authorities);
 
 			authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 			SecurityContextHolder.getContext().setAuthentication(authToken);

@@ -12,6 +12,10 @@ import com.harinitech.springboot_security_jwt_rbac_app1.entity.AuditLog;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
+	// ======================== 👤 all logs from app ========================
+
+	Page<AuditLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
+
 	// ======================== 👤 USER HISTORY ========================
 
 	Page<AuditLog> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);

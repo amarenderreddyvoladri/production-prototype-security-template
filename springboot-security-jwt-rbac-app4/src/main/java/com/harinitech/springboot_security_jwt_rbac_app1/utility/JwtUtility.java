@@ -130,9 +130,15 @@ public class JwtUtility {
 	// ===================== VALIDATION =====================
 
 	public boolean isTokenValid(String token) {
+
 		try {
-			return !isTokenExpired(token);
+
+			Claims claims = extractAllClaims(token);
+
+			return claims.getExpiration().after(new Date());
+
 		} catch (Exception e) {
+
 			return false;
 		}
 	}
