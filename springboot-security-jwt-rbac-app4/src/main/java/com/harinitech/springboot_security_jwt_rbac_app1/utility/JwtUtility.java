@@ -65,6 +65,7 @@ public class JwtUtility {
 		Map<String, Object> claims = new HashMap<>();
 		claims.put("role", role);
 		claims.put("permissions", permissions);
+		claims.put("tokenType", "ACCESS");
 		// subject = userId (as String) — immutable, username-change-safe
 		return buildToken(claims, String.valueOf(userId), accessTokenExpirationMs);
 	}
@@ -75,7 +76,11 @@ public class JwtUtility {
 	 * @param userId DB primary key — embedded as subject, no extra claims needed
 	 */
 	public String generateRefreshToken(Long userId) {
-		return buildToken(new HashMap<>(), String.valueOf(userId), refreshTokenExpirationMs);
+
+		Map<String, Object> claims = new HashMap<>();
+		claims.put("tokenType", "REFRESH");
+
+		return buildToken(claims, String.valueOf(userId), refreshTokenExpirationMs);
 	}
 
 	private String buildToken(Map<String, Object> claims, String subject, long expiration) {
@@ -145,5 +150,9 @@ public class JwtUtility {
 
 	private boolean isTokenExpired(String token) {
 		return extractExpiration(token).before(new Date());
+	}
+
+	public String extractTokenType(String token) {
+		return extractClaim(token, claims -> claims.get("tokenType", String.class));
 	}
 }

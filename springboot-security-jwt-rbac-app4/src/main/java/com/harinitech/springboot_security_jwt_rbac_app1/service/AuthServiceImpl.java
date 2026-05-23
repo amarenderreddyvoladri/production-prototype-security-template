@@ -182,7 +182,7 @@ public class AuthServiceImpl implements IAuthService {
 				() -> new RuntimeException("Refresh token not found. It may have already been rotated or deleted."));
 
 		// Step 2: Check revoked/expired flags
-		if (token.isRevoked() || token.isExpired()) {
+		if (token.isRevoked() || token.isExpired() || token.isRefreshUsed()) {
 
 			// 🔥 TOKEN REUSE DETECTED → SECURITY BREACH
 			revokeAllActiveTokens(token.getUser());
@@ -215,11 +215,41 @@ public class AuthServiceImpl implements IAuthService {
 		String newRefreshToken = jwtUtility.generateRefreshToken(user.getId());
 
 		// Step 5: Rotate — update same DB row (no new row created)
-		token.setAccessToken(newAccessToken);
-		token.setRefreshToken(newRefreshToken);
-		token.setAccessExpiry(Instant.now().plusMillis(accessTokenExpiry));
-		token.setRefreshExpiry(Instant.now().plusMillis(refreshTokenExpiry));
+		// ========================
+		// REVOKE OLD TOKEN PAIR
+		// ========================
+
+		token.setRevoked(true);
+		token.setExpired(true);
+		token.setRefreshUsed(true);
+
 		userTokenRepository.save(token);
+
+		// ========================
+		// CREATE NEW TOKEN RECORD
+		// ========================
+
+		UserToken newToken = new UserToken();
+
+		newToken.setUser(user);
+
+		newToken.setAccessToken(newAccessToken);
+		newToken.setRefreshToken(newRefreshToken);
+
+		newToken.setAccessExpiry(Instant.now().plusMillis(accessTokenExpiry));
+
+		newToken.setRefreshExpiry(Instant.now().plusMillis(refreshTokenExpiry));
+
+		newToken.setCreatedAt(Instant.now());
+
+		newToken.setRevoked(false);
+		newToken.setExpired(false);
+
+		newToken.setIpAddress(RequestInfoUtil.getClientIp(request));
+
+		newToken.setDeviceInfo(RequestInfoUtil.getDeviceInfo(request));
+
+		userTokenRepository.save(newToken);
 
 		log.info("TOKEN REFRESH | userId={} | newAccessExpiry={} | newRefreshExpiry={}", user.getId(),
 				token.getAccessExpiry(), token.getRefreshExpiry());

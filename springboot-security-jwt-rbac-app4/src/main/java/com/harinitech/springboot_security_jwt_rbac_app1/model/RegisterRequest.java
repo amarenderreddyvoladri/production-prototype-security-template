@@ -12,14 +12,15 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class RegisterRequest {
 
-    @NotBlank
-    @Email(message = "Invalid email")
-    private String username; // email
+	@NotBlank
+	@Email(message = "Invalid email")
+	private String username; // email
 
-    @NotBlank
-    @Size(min = 8)
-    private String password;
+	@NotBlank
+	@Size(min = 8, message = "Password must be at least 8 characters")
+	private String password;
 
-    @NotBlank
-    private String otp;
+	@NotBlank(message = "OTP is required")
+	private String otp;
+
 }

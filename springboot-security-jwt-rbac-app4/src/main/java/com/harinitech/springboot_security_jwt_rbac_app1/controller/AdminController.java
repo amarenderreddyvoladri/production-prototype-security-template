@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.model.ApiResponse;
@@ -185,5 +186,30 @@ public class AdminController {
 
 		return ResponseEntity.ok(ApiResponse.success("User permanently deleted successfully",
 				adminService.deleteUserPermanently(id).getBody()));
+	}
+
+	@GetMapping("/pending-registrations")
+	@PreAuthorize("hasAuthority('VIEW_USERS')")
+	public ResponseEntity<ApiResponse<?>> getPendingRegistrations() {
+		log.info("ADMIN API | FETCH PENDING REGISTRATIONS");
+		return ResponseEntity.ok(
+				ApiResponse.success("Pending registrations fetched", adminService.getPendingRegistrations().getBody()));
+	}
+
+	@PostMapping("/registrations/{id}/approve")
+	@PreAuthorize("hasAuthority('ASSIGN_EMPLOYEE') or hasAuthority('ASSIGN_MANAGER')") // adjust as needed
+	public ResponseEntity<ApiResponse<?>> approveRegistration(@PathVariable Long id, @RequestParam String role) {
+		log.warn("ADMIN API | APPROVE REGISTRATION | userId={} | role={}", id, role);
+		return ResponseEntity
+				.ok(ApiResponse.success("Registration approved", adminService.approveRegistration(id, role).getBody()));
+	}
+
+	@PostMapping("/registrations/{id}/reject")
+	@PreAuthorize("hasAuthority('UPDATE_USER_STATUS')")
+	public ResponseEntity<ApiResponse<?>> rejectRegistration(@PathVariable Long id,
+			@RequestParam(defaultValue = "Rejected by administrator") String reason) {
+		log.warn("ADMIN API | REJECT REGISTRATION | userId={} | reason={}", id, reason);
+		return ResponseEntity.ok(
+				ApiResponse.success("Registration rejected", adminService.rejectRegistration(id, reason).getBody()));
 	}
 }

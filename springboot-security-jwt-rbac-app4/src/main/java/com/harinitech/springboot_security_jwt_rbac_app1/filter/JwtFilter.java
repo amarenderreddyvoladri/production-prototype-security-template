@@ -53,6 +53,7 @@ public class JwtFilter extends OncePerRequestFilter {
 			SecurityContextHolder.clearContext();
 
 			// 3. JWT validation (cryptographic check)
+			// 3. JWT validation (cryptographic check)
 			if (!jwtUtility.isTokenValid(token)) {
 
 				userTokenRepository.findByAccessToken(token).ifPresent(dbToken -> {
@@ -74,10 +75,37 @@ public class JwtFilter extends OncePerRequestFilter {
 				return;
 			}
 
+			// ✅ PRODUCTION SECURITY
+			// ONLY ACCESS TOKENS CAN ACCESS APIs
+
+			String tokenType = jwtUtility.extractTokenType(token);
+
+			if (!"ACCESS".equals(tokenType)) {
+
+				log.warn("NON-ACCESS TOKEN USED FOR API ACCESS");
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+				return;
+			}
+
 			// 4. DB validation (session control)
 			UserToken dbToken = userTokenRepository.findByAccessToken(token).orElse(null);
 
 			if (dbToken == null || dbToken.isRevoked() || dbToken.isExpired()) {
+				SecurityContextHolder.clearContext();
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+				return;
+			}
+
+			// 5. DB expiry check (critical fix for timing mismatch)
+			if (dbToken.getAccessExpiry() != null && dbToken.getAccessExpiry().isBefore(java.time.Instant.now())) {
+
+				dbToken.setExpired(true);
+				userTokenRepository.save(dbToken);
+
 				SecurityContextHolder.clearContext();
 				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 				return;
