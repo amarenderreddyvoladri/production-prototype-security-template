@@ -162,32 +162,76 @@ public class UserServiceImpl implements IUserService {
 	// ======================== 🔑 PASSWORD ========================
 
 	@Override
-	public ResponseEntity<?> changePassword(String oldPassword, String newPassword) {
+	public ResponseEntity<?> changePassword(String currentPassword, String newPassword, String confirmPassword) {
 
 		User user = getCurrentUser();
 
-		if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-			return ResponseEntity.badRequest().body("Old password is incorrect. Please try again.");
+		// ========================
+		// VALIDATE CURRENT PASSWORD
+		// ========================
+
+		if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+
+			log.warn("CHANGE PASSWORD FAILED | Invalid current password | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("Current password is incorrect.");
 		}
+
+		// ========================
+		// CONFIRM PASSWORD MATCH
+		// ========================
+
+		if (!newPassword.equals(confirmPassword)) {
+
+			log.warn("CHANGE PASSWORD FAILED | Password mismatch | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("New password and confirm password do not match.");
+		}
+
+		// ========================
+		// PREVENT SAME PASSWORD REUSE
+		// ========================
 
 		if (passwordEncoder.matches(newPassword, user.getPassword())) {
-			return ResponseEntity.badRequest().body("New password cannot be the same as your current password.");
+
+			log.warn("CHANGE PASSWORD FAILED | Same password reuse attempt | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("New password cannot be same as current password.");
 		}
 
+		// ========================
+		// UPDATE PASSWORD
+		// ========================
+
 		user.setPassword(passwordEncoder.encode(newPassword));
-		user.setPasswordChangedAt(Instant.now()); // ✅ NEW
-		user.setForcePasswordChange(false); // ✅ RESET FLAG
+
+		// security metadata
+		user.setPasswordChangedAt(Instant.now());
+
+		// reset forced password change flag
+		user.setForcePasswordChange(false);
+
 		userRepository.save(user);
 
-		// Force logout from all devices after password change (security best practice)
+		// ========================
+		// REVOKE ALL ACTIVE SESSIONS
+		// ========================
+
 		revokeAllActiveTokens(user);
+
+		// clear current authentication
 		SecurityContextHolder.clearContext();
 
-		log.info("PASSWORD CHANGED | userId={}", user.getId());
+		log.info("PASSWORD CHANGED SUCCESSFULLY | userId={}", user.getId());
 
 		auditService.log(AuditAction.PASSWORD_CHANGED, AuditStatus.SUCCESS, "Password changed successfully", null);
 
-		return ResponseEntity.ok(Map.of("message", "Password changed successfully", "userId", user.getId()));
+		// ========================
+		// RESPONSE
+		// ========================
+
+		return ResponseEntity
+				.ok(Map.of("message", "Password changed successfully. Please login again.", "userId", user.getId()));
 	}
 
 	@Override
