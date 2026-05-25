@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.utility.JwtUtility;
 
@@ -25,10 +26,12 @@ public class JwtFilter extends OncePerRequestFilter {
 
 	private final JwtUtility jwtUtility;
 	private final UserTokenRepository userTokenRepository;
+	private final UserRepository userRepository;
 
-	public JwtFilter(JwtUtility jwtUtility, UserTokenRepository userTokenRepository) {
+	public JwtFilter(JwtUtility jwtUtility, UserTokenRepository userTokenRepository, UserRepository userRepository) {
 		this.jwtUtility = jwtUtility;
 		this.userTokenRepository = userTokenRepository;
+		this.userRepository = userRepository;
 	}
 
 	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JwtFilter.class);
@@ -123,6 +126,44 @@ public class JwtFilter extends OncePerRequestFilter {
 				return;
 			}
 
+//			here i added a new latest logic related to user can access only if user creates a new password and login only.
+			// ================= FORCE PASSWORD CHANGE CHECK =================
+
+			var user = userRepository.findById(userId).orElse(null);
+
+			if (user == null) {
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+				return;
+			}
+
+			String requestPath = request.getRequestURI();
+
+			boolean allowedPath = requestPath.contains("/change-password") || requestPath.contains("/logout");
+
+			if (user.isForcePasswordChange() && !allowedPath) {
+
+				log.warn("FORCE PASSWORD CHANGE REQUIRED | userId={}", userId);
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+
+				response.setContentType("application/json");
+
+				response.getWriter().write("""
+						{
+						  "message":"Password change required",
+						  "forcePasswordChange":true
+						}
+						""");
+
+				return;
+			}
+
 			// 7. Build authorities
 			List<SimpleGrantedAuthority> authorities = new ArrayList<>();
 			authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
@@ -152,4 +193,10 @@ public class JwtFilter extends OncePerRequestFilter {
 
 		filterChain.doFilter(request, response);
 	}
+
+	/*
+	 * 1. JWT validation 2. tokenType validation 3. DB token validation 4. expiry
+	 * validation 5. extract userId 6. strict validation 7. force password change
+	 * validation ✅ NEW 8. build authorities 9. set authentication
+	 */
 }
