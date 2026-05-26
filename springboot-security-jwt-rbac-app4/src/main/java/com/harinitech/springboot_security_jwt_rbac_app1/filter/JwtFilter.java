@@ -11,6 +11,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
@@ -55,7 +56,6 @@ public class JwtFilter extends OncePerRequestFilter {
 			// 2. Clear previous context (important in thread reuse)
 			SecurityContextHolder.clearContext();
 
-			// 3. JWT validation (cryptographic check)
 			// 3. JWT validation (cryptographic check)
 			if (!jwtUtility.isTokenValid(token)) {
 
@@ -129,7 +129,7 @@ public class JwtFilter extends OncePerRequestFilter {
 //			here i added a new latest logic related to user can access only if user creates a new password and login only.
 			// ================= FORCE PASSWORD CHANGE CHECK =================
 
-			var user = userRepository.findById(userId).orElse(null);
+			User user = userRepository.findById(userId).orElse(null);
 
 			if (user == null) {
 
@@ -142,7 +142,8 @@ public class JwtFilter extends OncePerRequestFilter {
 
 			String requestPath = request.getRequestURI();
 
-			boolean allowedPath = requestPath.contains("/change-password") || requestPath.contains("/logout");
+			boolean allowedPath = requestPath.startsWith("/auth/change-password")
+					|| requestPath.startsWith("/auth/logout");
 
 			if (user.isForcePasswordChange() && !allowedPath) {
 
