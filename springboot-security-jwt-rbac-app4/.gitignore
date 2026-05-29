@@ -99,6 +99,9 @@ logs/
 .settings/
 .springBeans
 .sts4-cache/
+.metadata/
+.sonarlint/
+.factorypath
 
 # =========================================================
 # NETBEANS
