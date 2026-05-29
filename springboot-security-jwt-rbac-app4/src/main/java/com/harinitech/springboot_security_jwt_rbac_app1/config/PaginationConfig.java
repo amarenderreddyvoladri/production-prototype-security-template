@@ -7,6 +7,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.config.PageableHandlerMethodArgumentResolverCustomizer;
 
 @Configuration
+import org.springframework.data.web.config.EnableSpringDataWebSupport;
+import org.springframework.data.web.config.PageableHandlerMethodArgumentResolverCustomizer;
+
+@Configuration
+@EnableSpringDataWebSupport
 public class PaginationConfig {
 
 	@Bean
@@ -24,6 +29,10 @@ public class PaginationConfig {
 			pageable.setMaxPageSize(100);
 
 			// page starts from 0
+			pageable.setFallbackPageable(PageRequest.of(0, 10));
+
+			pageable.setMaxPageSize(100);
+
 			pageable.setOneIndexedParameters(false);
 		};
 	}

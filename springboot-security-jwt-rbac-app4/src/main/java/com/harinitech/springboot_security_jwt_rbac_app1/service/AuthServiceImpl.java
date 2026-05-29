@@ -56,7 +56,6 @@ import lombok.extern.slf4j.Slf4j;
  * resolution.
  */
 
-@Transactional
 @Slf4j
 @Service
 public class AuthServiceImpl implements IAuthService {
@@ -79,6 +78,9 @@ public class AuthServiceImpl implements IAuthService {
 	@Autowired
 	private AuditService auditService;
 
+	@Autowired
+	private LoginAttemptService loginAttemptService;
+
 	@Value("${security.account.lock-duration-ms}")
 	private long lockDuration;
 
@@ -92,7 +94,7 @@ public class AuthServiceImpl implements IAuthService {
 	private long refreshTokenExpiry;
 
 	// ======================== 🔐 LOGIN ========================
-
+	@Transactional
 	@Override
 	public JwtResponse authenticateUser(JwtRequest request, HttpServletRequest httpRequest) {
 
@@ -112,16 +114,25 @@ public class AuthServiceImpl implements IAuthService {
 		// Step 2: Load full user entity
 		User user = getUserByUsername(request.getUsername());
 
-		// ✅ ADD THIS
+		// ✅ Auto unlock if lock expired
 		unlockIfLockExpired(user);
 
-		if (user.isAccountLocked()) {
-			throw new RuntimeException("Your account is locked.");
-		}
+		// ✅ RELOAD USER FROM DB AFTER UNLOCK
+		user = getUserByUsername(request.getUsername());
 
+		// ✅ Block if still locked
+		if (user.isAccountLocked()) {
+
+			log.warn("LOGIN BLOCKED | ACCOUNT STILL LOCKED | username={}", request.getUsername());
+
+			throw new RuntimeException("Your account is locked. Please try again later.");
+		}
 		// Step 1: Verify credentials via Spring Security (calls loadUserByUsername
 		// internally)
 		authenticate(request.getUsername(), request.getPassword());
+
+		// reload latest DB state
+		user = getUserByUsername(request.getUsername());
 
 		// Step 3: Block inactive accounts before issuing tokens
 		if (user.getStatus() != Status.ACTIVE) {
@@ -150,7 +161,7 @@ public class AuthServiceImpl implements IAuthService {
 		user.setLastLoginAt(Instant.now());
 		user.setLastLoginIp(RequestInfoUtil.getClientIp(httpRequest));
 		user.setLastLoginDevice(RequestInfoUtil.getDeviceInfo(httpRequest));
-		userRepository.save(user);
+		userRepository.saveAndFlush(user);
 
 		log.info("LOGIN SUCCESS | userId={} | role={} | ip={} | device={}", user.getId(), user.getRole().getName(),
 				RequestInfoUtil.getClientIp(httpRequest), RequestInfoUtil.getDeviceInfo(httpRequest));
@@ -161,21 +172,32 @@ public class AuthServiceImpl implements IAuthService {
 	}
 
 	private void unlockIfLockExpired(User user) {
-		if (user.getLockTime() == null)
-			return;
 
-		if (user.getLockTime().plusMillis(lockDuration).isBefore(Instant.now())) {
+		if (user == null || user.getLockTime() == null) {
+			return;
+		}
+
+		// ✅ unlock after configured duration
+		if (Instant.now().isAfter(user.getLockTime().plusMillis(lockDuration))) {
+
 			user.setAccountLocked(false);
+
 			user.setFailedLoginAttempts(0);
+
 			user.setLockTime(null);
+
+			userRepository.saveAndFlush(user);
+
+			log.info("ACCOUNT AUTO UNLOCKED | userId={}", user.getId());
+
 			auditService.log(AuditAction.ACCOUNT_UNLOCKED, AuditStatus.SUCCESS,
 					"Account automatically unlocked after lock duration expired", null);
-			userRepository.save(user);
 		}
 	}
 
 	// ======================== 🔄 REFRESH TOKEN ========================
 
+	@Transactional
 	@Override
 	public ResponseEntity<?> refreshToken(String refreshToken, HttpServletRequest request) {
 
@@ -184,7 +206,7 @@ public class AuthServiceImpl implements IAuthService {
 				() -> new RuntimeException("Refresh token not found. It may have already been rotated or deleted."));
 
 		// Step 2: Check revoked/expired flags
-		if (token.isRevoked() || token.isExpired()) {
+		if (token.isRevoked() || token.isExpired() || token.isRefreshUsed()) {
 
 			// 🔥 TOKEN REUSE DETECTED → SECURITY BREACH
 			revokeAllActiveTokens(token.getUser());
@@ -198,12 +220,13 @@ public class AuthServiceImpl implements IAuthService {
 					"Security breach detected: Reused or invalid refresh token. All sessions terminated.");
 		}
 
-		// Step 3: Check actual expiry timestamp
-		if (token.getRefreshExpiry().isBefore(Instant.now())) {
+		// Step 3: Validate refresh token using JWT itself
+		if (!jwtUtility.isTokenValid(refreshToken)) {
+
 			token.setExpired(true);
 			userTokenRepository.save(token);
-			throw new RuntimeException(
-					"Refresh token expired at " + token.getRefreshExpiry() + ". Please log in again.");
+
+			throw new RuntimeException("Refresh token expired. Please login again.");
 		}
 
 		// Step 4: Build new token pair — ✅ uses userId
@@ -216,14 +239,44 @@ public class AuthServiceImpl implements IAuthService {
 		String newRefreshToken = jwtUtility.generateRefreshToken(user.getId());
 
 		// Step 5: Rotate — update same DB row (no new row created)
-		token.setAccessToken(newAccessToken);
-		token.setRefreshToken(newRefreshToken);
-		token.setAccessExpiry(Instant.now().plusMillis(accessTokenExpiry));
-		token.setRefreshExpiry(Instant.now().plusMillis(refreshTokenExpiry));
+		// ========================
+		// REVOKE OLD TOKEN PAIR
+		// ========================
+
+		token.setRevoked(true);
+		token.setExpired(true);
+		token.setRefreshUsed(true);
+
 		userTokenRepository.save(token);
 
+		// ========================
+		// CREATE NEW TOKEN RECORD
+		// ========================
+
+		UserToken newToken = new UserToken();
+
+		newToken.setUser(user);
+
+		newToken.setAccessToken(newAccessToken);
+		newToken.setRefreshToken(newRefreshToken);
+
+		newToken.setAccessExpiry(Instant.now().plusMillis(accessTokenExpiry));
+
+		newToken.setRefreshExpiry(Instant.now().plusMillis(refreshTokenExpiry));
+
+		newToken.setCreatedAt(Instant.now());
+
+		newToken.setRevoked(false);
+		newToken.setExpired(false);
+
+		newToken.setIpAddress(RequestInfoUtil.getClientIp(request));
+
+		newToken.setDeviceInfo(RequestInfoUtil.getDeviceInfo(request));
+
+		userTokenRepository.save(newToken);
+
 		log.info("TOKEN REFRESH | userId={} | newAccessExpiry={} | newRefreshExpiry={}", user.getId(),
-				token.getAccessExpiry(), token.getRefreshExpiry());
+				newToken.getAccessExpiry(), newToken.getRefreshExpiry());
 
 		auditService.log(AuditAction.TOKEN_REFRESH, AuditStatus.SUCCESS, "Access token refreshed successfully",
 				request);
@@ -233,6 +286,7 @@ public class AuthServiceImpl implements IAuthService {
 
 	// ======================== 🚪 LOGOUT ========================
 
+	@Transactional
 	@Override
 	public ResponseEntity<?> logout(String accessToken, HttpServletRequest request) {
 
@@ -264,6 +318,7 @@ public class AuthServiceImpl implements IAuthService {
 
 	}
 
+	@Transactional
 	@Override
 	public ResponseEntity<?> logoutAllDevices(HttpServletRequest request) {
 
@@ -367,6 +422,7 @@ public class AuthServiceImpl implements IAuthService {
 				"isLast", sessionPage.isLast()));
 	}
 
+	@Transactional
 	@Override
 	public ResponseEntity<?> revokeSessionById(Long tokenId, HttpServletRequest request) {
 
@@ -423,57 +479,53 @@ public class AuthServiceImpl implements IAuthService {
 	private void authenticate(String username, String password) {
 
 		try {
+
 			authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
 
-			// ✅ SUCCESS: reset attempts safely
-			userRepository.findByUsername(normalize(username)).ifPresent(user -> {
-				user.setFailedLoginAttempts(0);
-				user.setAccountLocked(false);
-				user.setLockTime(null);
-				userRepository.save(user);
-			});
+			userRepository.findByUsername(normalize(username))
+					.ifPresent(user -> loginAttemptService.resetFailedAttempts(user, username));
 
 		} catch (BadCredentialsException e) {
 
 			User user = userRepository.findByUsername(normalize(username)).orElse(null);
 
-			int attempts = 0; // ✅ safe default
-
 			if (user != null) {
+
 				if (user.isAccountLocked()) {
+
+					log.warn("LOGIN BLOCKED | ACCOUNT ALREADY LOCKED | username={}", username);
+
+					auditService.log(AuditAction.LOGIN, AuditStatus.BLOCKED, "Login blocked because account is locked",
+							null);
+
 					throw new LockedException("Account already locked");
 				}
-				attempts = user.getFailedLoginAttempts() + 1;
-				user.setFailedLoginAttempts(attempts);
 
-				if (attempts >= maxLoginAttempts) {
-					user.setAccountLocked(true);
-					user.setLockTime(Instant.now());
+				loginAttemptService.recordFailedAttempt(user, username);
 
-					auditService.log(AuditAction.ACCOUNT_LOCKED, AuditStatus.BLOCKED,
-							"Account locked due to multiple failed login attempts", null);
+			} else {
 
-					log.error("ACCOUNT LOCKED | username={} | attempts={}", username, attempts);
-				}
+				log.warn("LOGIN FAILED | UNKNOWN USERNAME | username={}", username);
 
-				userRepository.save(user);
+				auditService.log(AuditAction.LOGIN, AuditStatus.FAILED, "Login attempt with unknown username", null);
 			}
 
-			// ✅ LOG (safe)
-			log.warn("LOGIN FAILED | username={} | attempts={}", username, attempts);
-
-			auditService.log(AuditAction.LOGIN, AuditStatus.FAILED, "Invalid username or password", null);
-
-			// ❗ SECURITY: generic message (no info leak)
-			throw new RuntimeException("Invalid username or password.");
+			throw new BadCredentialsException("Invalid username or password.");
 
 		} catch (DisabledException e) {
-			log.warn("LOGIN BLOCKED (DISABLED) | username={}", username);
-			auditService.log(AuditAction.LOGIN, AuditStatus.BLOCKED, "Login blocked because account disabled", null);
+
+			log.warn("LOGIN BLOCKED | ACCOUNT DISABLED | username={}", username);
+
+			auditService.log(AuditAction.LOGIN, AuditStatus.BLOCKED, "Login blocked because account is disabled", null);
+
 			throw new RuntimeException("Your account is disabled.");
+
 		} catch (LockedException e) {
-			log.warn("LOGIN BLOCKED (LOCKED) | username={}", username);
-			auditService.log(AuditAction.LOGIN, AuditStatus.BLOCKED, "Login blocked because account locked", null);
+
+			log.warn("LOGIN BLOCKED | ACCOUNT LOCKED | username={}", username);
+
+			auditService.log(AuditAction.LOGIN, AuditStatus.BLOCKED, "Login blocked because account is locked", null);
+
 			throw new RuntimeException("Your account is locked.");
 		}
 	}

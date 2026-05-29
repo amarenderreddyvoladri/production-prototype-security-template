@@ -40,4 +40,10 @@ public interface UserTokenRepository extends JpaRepository<UserToken, Long> {
 
 	// 🔥 Auto-delete expired tokens (BEST PRACTICE)
 	void deleteAllByRefreshExpiryBefore(Instant now);
+
+//	This method is used for token clean up service every 5 minutes explicitly
+	List<UserToken> findAllByExpiredFalse();
+	
+//	this method is added for token expiry = 1 in db without depending on any user-request/
+	List<UserToken> findAllByExpiredFalseAndAccessExpiryBefore(Instant now);
 }

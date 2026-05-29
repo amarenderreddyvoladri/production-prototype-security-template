@@ -1,6 +1,5 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.service;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -25,11 +24,11 @@ public class AuditQueryService {
 
 	// ======================== 📋 FILTERED AUDIT LOGS ========================
 
-	public Page<AuditLog> getAuditLogs(String action, String status, String username, String role, String ipAddress,
-			Instant fromDate, Instant toDate, Pageable pageable) {
+	// ======================== 📋 ALL AUDIT LOGS ========================
 
-		return auditLogRepository.searchAuditLogs(action, status, username, role, ipAddress, fromDate, toDate,
-				pageable);
+	public Page<AuditLog> getAllAuditLogs(Pageable pageable) {
+
+		return auditLogRepository.findAllByOrderByCreatedAtDesc(pageable);
 	}
 
 	// ======================== 🔍 SINGLE AUDIT ========================

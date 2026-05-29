@@ -1,0 +1,54 @@
+# ======================
+# BUILD OUTPUT
+# ======================
+target/
+build/
+out/
+
+# ======================
+# IDE FILES
+# ======================
+.metadata/
+.settings/
+.classpath
+.project
+.factorypath
+.sonarlint/
+.idea/
+*.iml
+.vscode/
+
+# ======================
+# SPRING BOOT / LOGS
+# ======================
+*.log
+logs/
+
+# ======================
+# SECURITY / SECRETS
+# ======================
+.env
+application-secret.properties
+*.env
+*.pem
+*.key
+*.jks
+
+# ======================
+# OS FILES
+# ======================
+.DS_Store
+Thumbs.db
+
+# ======================
+# MAVEN / GRADLE
+# ======================
+.mvn/
+.gradle/
+
+# ======================
+# TEMP FILES
+# ======================
+*.tmp
+*.bak
+*.swp

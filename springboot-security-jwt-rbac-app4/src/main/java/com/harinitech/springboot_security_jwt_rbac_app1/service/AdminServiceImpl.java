@@ -56,6 +56,9 @@ public class AdminServiceImpl implements IAdminService {
 	@Autowired
 	private AuditService auditService;
 
+	@Autowired
+	private EmailService emailService;
+
 	// ======================== 📋 READ ========================
 
 	@Override
@@ -226,6 +229,136 @@ public class AdminServiceImpl implements IAdminService {
 
 		return ResponseEntity.ok(Map.of("message", "User has been logged out from all devices.", "userId", userId,
 				"sessionsEnded", revokedCount));
+	}
+
+	// ======================== 👑 HIERARCHICAL APPROVAL POLICY
+	// ========================
+
+	/**
+	 * Centralised approval hierarchy. Key = Approver's role | Value = Roles they
+	 * can approve.
+	 * 
+	 * For production, externalise to application.yml
+	 * using @ConfigurationProperties.
+	 */
+	private static final Map<String, Set<String>> APPROVAL_HIERARCHY = Map.of("ADMIN",
+			Set.of("MANAGER", "EMPLOYEE", "VENDOR", "HR", "FINANCE", "SUPPORT"), "MANAGER",
+			Set.of("VENDOR", "HR", "EMPLOYEE", "SUPPORT"), "HR", Set.of("EMPLOYEE"));
+
+	private boolean canApproveRole(String approverRole, String targetRole) {
+		Set<String> allowed = APPROVAL_HIERARCHY.get(approverRole.toUpperCase());
+		return allowed != null && allowed.contains(targetRole.toUpperCase());
+	}
+
+	// ======================== 📋 PENDING REGISTRATIONS ========================
+
+	@Override
+	public ResponseEntity<?> getPendingRegistrations() {
+		requirePermission("VIEW_USERS");
+
+		List<User> pending = userRepository.findByStatus(Status.PENDING_APPROVAL);
+		List<Map<String, Object>> result = pending.stream()
+				.map(user -> Map.<String, Object>of("userId", user.getId(), "email", user.getUsername(),
+						"requestedRole", user.getRequestedRole(), "registeredAt", user.getPasswordChangedAt()))
+				.toList();
+
+		log.info("PENDING REGISTRATIONS FETCHED | count={} | by userId={}", pending.size(), getCurrentUserId());
+		auditService.log(AuditAction.VIEW_PENDING_REGISTRATIONS, AuditStatus.SUCCESS,
+				"Fetched pending employee registrations", null);
+
+		return ResponseEntity.ok(result);
+	}
+
+	// ======================== ✅ APPROVE (HIERARCHICAL) ========================
+
+	@Override
+	@Transactional
+	public ResponseEntity<?> approveRegistration(Long userId, String assignedRole) {
+		requirePermission("ASSIGN_" + assignedRole.toUpperCase());
+
+		User admin = getCurrentUser();
+		String adminRole = admin.getRole().getName();
+
+		User pendingUser = userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+
+		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
+			throw new RuntimeException("User is not in pending approval state.");
+		}
+
+		String requestedRole = pendingUser.getRequestedRole();
+		if (requestedRole == null) {
+			throw new RuntimeException("No requested role found for this user.");
+		}
+
+		// Hierarchical check
+		if (!canApproveRole(adminRole, requestedRole)) {
+			log.warn("APPROVAL BLOCKED | adminId={} | adminRole={} | targetRole={}", admin.getId(), adminRole,
+					requestedRole);
+			throw new RuntimeException("You are not authorised to approve registrations for role: " + requestedRole);
+		}
+
+		// Final role (could be same as requested, or admin can override)
+		String finalRole = assignedRole != null ? assignedRole.toUpperCase() : requestedRole;
+		Role role = roleRepository.findByName(finalRole)
+				.orElseThrow(() -> new RuntimeException("Role '" + finalRole + "' does not exist."));
+
+		pendingUser.setRole(role);
+		pendingUser.setStatus(Status.ACTIVE);
+		pendingUser.setEnabled(true);
+		pendingUser.setRequestedRole(null);
+		userRepository.save(pendingUser);
+
+		emailService.sendApprovalConfirmation(pendingUser.getUsername(), finalRole);
+
+		log.info("REGISTRATION APPROVED | adminId={} | userId={} | finalRole={}", admin.getId(), userId, finalRole);
+		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
+				"Approved employee registration. Role: " + finalRole, null);
+
+		return ResponseEntity
+				.ok(Map.of("message", "User approved successfully.", "userId", userId, "assignedRole", finalRole));
+	}
+
+	// ======================== ❌ REJECT ========================
+
+	@Override
+	@Transactional
+	public ResponseEntity<?> rejectRegistration(Long userId, String reason) {
+		requirePermission("UPDATE_USER_STATUS");
+
+		User admin = getCurrentUser();
+		User pendingUser = userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+
+		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
+			throw new RuntimeException("User is not in pending approval state.");
+		}
+
+		pendingUser.setStatus(Status.INACTIVE);
+		pendingUser.setEnabled(false);
+		pendingUser.setRequestedRole(null);
+		userRepository.save(pendingUser);
+
+		emailService.sendRejectionNotice(pendingUser.getUsername(), reason);
+
+		log.info("REGISTRATION REJECTED | adminId={} | userId={} | reason={}", admin.getId(), userId, reason);
+		auditService.log(AuditAction.REGISTRATION_REJECTED, AuditStatus.SUCCESS,
+				"Rejected employee registration. Reason: " + reason, null);
+
+		return ResponseEntity.ok(Map.of("message", "User registration rejected.", "userId", userId, "reason", reason));
+	}
+
+	// ======================== 🧰 HELPER ========================
+
+	/**
+	 * Returns the currently authenticated admin user. Principal is userId (Long as
+	 * String) – consistent with JwtFilter contract.
+	 */
+	private User getCurrentUser() {
+		Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+		Long userId = Long.parseLong(principal.toString());
+		return userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("Authenticated admin not found."));
 	}
 
 	// ======================== 🧰 PRIVATE HELPERS ========================

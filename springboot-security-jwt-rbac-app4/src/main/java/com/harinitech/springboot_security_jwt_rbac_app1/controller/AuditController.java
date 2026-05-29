@@ -1,17 +1,14 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.controller;
 
-import java.time.Instant;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.AuditLog;
@@ -31,31 +28,15 @@ public class AuditController {
 	private final AuditQueryService auditQueryService;
 
 	// ======================== 📋 AUDIT LOGS ========================
-
 	@PreAuthorize("hasAuthority('VIEW_AUDIT_LOGS')")
 	@GetMapping("/logs")
 	public ResponseEntity<ApiResponse<?>> getAuditLogs(
 
-			@RequestParam(required = false) String action,
+			@PageableDefault(page = 0, size = 20, sort = "createdAt") Pageable pageable) {
 
-			@RequestParam(required = false) String status,
+		log.info("AUDIT API | Fetch all audit logs");
 
-			@RequestParam(required = false) String username,
-
-			@RequestParam(required = false) String role,
-
-			@RequestParam(required = false) String ipAddress,
-
-			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant fromDate,
-
-			@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant toDate,
-
-			Pageable pageable) {
-
-		log.info("AUDIT API | Fetch audit logs");
-
-		Page<AuditLog> response = auditQueryService.getAuditLogs(action, status, username, role, ipAddress, fromDate,
-				toDate, pageable);
+		Page<AuditLog> response = auditQueryService.getAllAuditLogs(pageable);
 
 		return ResponseEntity.ok(ApiResponse.success("Audit logs fetched successfully", response));
 	}

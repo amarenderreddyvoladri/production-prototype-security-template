@@ -26,10 +26,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "users", indexes = {
-	    @Index(name = "idx_user_username", columnList = "username"),
-	    @Index(name = "idx_user_status", columnList = "status")
-	})
+@Table(name = "users", indexes = { @Index(name = "idx_user_username", columnList = "username"),
+		@Index(name = "idx_user_status", columnList = "status") })
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -63,6 +61,13 @@ public class User extends Auditable {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private Status status = Status.ACTIVE;
+
+	/**
+	 * The role the user requested during employee registration. Set only when
+	 * status = PENDING_APPROVAL, cleared after approval/rejection.
+	 */
+	@Column(name = "requested_role", length = 50)
+	private String requestedRole;
 
 	// ======================== 🔒 ACCOUNT SECURITY ========================
 

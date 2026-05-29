@@ -11,7 +11,9 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
+import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.utility.JwtUtility;
 
@@ -25,18 +27,18 @@ public class JwtFilter extends OncePerRequestFilter {
 
 	private final JwtUtility jwtUtility;
 	private final UserTokenRepository userTokenRepository;
+	private final UserRepository userRepository;
 
-	public JwtFilter(JwtUtility jwtUtility, UserTokenRepository userTokenRepository) {
+	public JwtFilter(JwtUtility jwtUtility, UserTokenRepository userTokenRepository, UserRepository userRepository) {
 		this.jwtUtility = jwtUtility;
 		this.userTokenRepository = userTokenRepository;
+		this.userRepository = userRepository;
 	}
 
-	private static final org.slf4j.Logger log =
-			org.slf4j.LoggerFactory.getLogger(JwtFilter.class);
+	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(JwtFilter.class);
 
 	@Override
-	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-	                                 FilterChain filterChain)
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
 			throws ServletException, IOException {
 
 		final String authHeader = request.getHeader("Authorization");
@@ -56,8 +58,39 @@ public class JwtFilter extends OncePerRequestFilter {
 
 			// 3. JWT validation (cryptographic check)
 			if (!jwtUtility.isTokenValid(token)) {
+
+				userTokenRepository.findByAccessToken(token).ifPresent(dbToken -> {
+
+					if (!dbToken.isExpired()) {
+
+						dbToken.setExpired(true);
+
+						userTokenRepository.save(dbToken);
+
+						log.info("TOKEN AUTO-EXPIRED | tokenId={}", dbToken.getId());
+					}
+				});
+
 				SecurityContextHolder.clearContext();
+
 				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+				return;
+			}
+
+			// ✅ PRODUCTION SECURITY
+			// ONLY ACCESS TOKENS CAN ACCESS APIs
+
+			String tokenType = jwtUtility.extractTokenType(token);
+
+			if (!"ACCESS".equals(tokenType)) {
+
+				log.warn("NON-ACCESS TOKEN USED FOR API ACCESS");
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
 				return;
 			}
 
@@ -71,8 +104,7 @@ public class JwtFilter extends OncePerRequestFilter {
 			}
 
 			// 5. DB expiry check (critical fix for timing mismatch)
-			if (dbToken.getAccessExpiry() != null &&
-				dbToken.getAccessExpiry().isBefore(java.time.Instant.now())) {
+			if (dbToken.getAccessExpiry() != null && dbToken.getAccessExpiry().isBefore(java.time.Instant.now())) {
 
 				dbToken.setExpired(true);
 				userTokenRepository.save(dbToken);
@@ -94,6 +126,45 @@ public class JwtFilter extends OncePerRequestFilter {
 				return;
 			}
 
+//			here i added a new latest logic related to user can access only if user creates a new password and login only.
+			// ================= FORCE PASSWORD CHANGE CHECK =================
+
+			User user = userRepository.findById(userId).orElse(null);
+
+			if (user == null) {
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
+				return;
+			}
+
+			String requestPath = request.getRequestURI();
+
+			boolean allowedPath = requestPath.startsWith("/auth/change-password")
+					|| requestPath.startsWith("/auth/logout");
+
+			if (user.isForcePasswordChange() && !allowedPath) {
+
+				log.warn("FORCE PASSWORD CHANGE REQUIRED | userId={}", userId);
+
+				SecurityContextHolder.clearContext();
+
+				response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+
+				response.setContentType("application/json");
+
+				response.getWriter().write("""
+						{
+						  "message":"Password change required",
+						  "forcePasswordChange":true
+						}
+						""");
+
+				return;
+			}
+
 			// 7. Build authorities
 			List<SimpleGrantedAuthority> authorities = new ArrayList<>();
 			authorities.add(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
@@ -103,8 +174,8 @@ public class JwtFilter extends OncePerRequestFilter {
 			}
 
 			// 8. Set authentication
-			UsernamePasswordAuthenticationToken authToken =
-					new UsernamePasswordAuthenticationToken(userId.toString(), null, authorities);
+			UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userId.toString(),
+					null, authorities);
 
 			authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 			SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -123,4 +194,10 @@ public class JwtFilter extends OncePerRequestFilter {
 
 		filterChain.doFilter(request, response);
 	}
+
+	/*
+	 * 1. JWT validation 2. tokenType validation 3. DB token validation 4. expiry
+	 * validation 5. extract userId 6. strict validation 7. force password change
+	 * validation ✅ NEW 8. build authorities 9. set authentication
+	 */
 }

@@ -1,7 +1,5 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.controller;
 
-import java.util.Map;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -12,7 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.model.ApiResponse;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.ChangePasswordRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.EmailRequest;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.EmployeeRegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.passwordreset.ForgotPasswordRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.passwordreset.ResetPasswordRequest;
@@ -97,11 +97,21 @@ public class UserController {
 
 	@PreAuthorize("isAuthenticated()")
 	@PostMapping("/change-password")
-	public ResponseEntity<ApiResponse<?>> changePassword(@RequestBody Map<String, String> request) {
+	public ResponseEntity<ApiResponse<?>> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
 
 		log.info("USER API | Change password request");
 
-		return ResponseEntity.ok(ApiResponse.success("Password changed successfully",
-				userService.changePassword(request.get("oldPassword"), request.get("newPassword")).getBody()));
+		return ResponseEntity.ok(ApiResponse.success("Password changed successfully", userService
+				.changePassword(request.getCurrentPassword(), request.getNewPassword(), request.getConfirmPassword())
+				.getBody()));
+	}
+
+	@PostMapping("/employee-register")
+	public ResponseEntity<ApiResponse<?>> employeeRegister(@Valid @RequestBody EmployeeRegisterRequest request) {
+
+		log.info("USER API | Employee registration attempt | email={}", request.getEmail());
+
+		return ResponseEntity
+				.ok(ApiResponse.success("Registration submitted", userService.employeeRegistration(request).getBody()));
 	}
 }
