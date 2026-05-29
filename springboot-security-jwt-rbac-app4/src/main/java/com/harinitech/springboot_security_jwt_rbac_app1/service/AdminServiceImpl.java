@@ -6,6 +6,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -57,11 +59,19 @@ public class AdminServiceImpl implements IAdminService {
 	// ======================== 📋 READ ========================
 
 	@Override
-	public ResponseEntity<?> getAllUsers() {
-		List<User> users = userRepository.findAll();
-		log.info("Admin [userId={}] fetched all users. Count: {}", getCurrentUserId(), users.size());
-		auditService.log(AuditAction.VIEW_USERS, AuditStatus.SUCCESS, "Admin fetched all users", null);
-		return ResponseEntity.ok(users.stream().map(UserMapper::toSummary).toList());
+	@Transactional(readOnly = true)
+	public ResponseEntity<?> getAllUsers(Pageable pageable) {
+
+		Page<User> userPage = userRepository.findAll(pageable);
+
+		Page<?> responsePage = userPage.map(UserMapper::toSummary);
+
+		log.info("ADMIN USERS FETCHED | adminId={} | page={} | size={} | totalElements={}", getCurrentUserId(),
+				pageable.getPageNumber(), pageable.getPageSize(), userPage.getTotalElements());
+
+		auditService.log(AuditAction.VIEW_USERS, AuditStatus.SUCCESS, "Admin fetched paginated users", null);
+
+		return ResponseEntity.ok(responsePage);
 	}
 
 	@Override
@@ -285,12 +295,14 @@ public class AdminServiceImpl implements IAdminService {
 
 		List<UserToken> activeTokens = userTokenRepository.findAllByUserAndRevokedFalseAndExpiredFalse(user);
 
-		if (activeTokens.isEmpty())
+		if (activeTokens.isEmpty()) {
+			log.info("NO ACTIVE TOKENS FOUND | targetUserId={}", user.getId());
 			return 0;
+		}
 
-		activeTokens.forEach(t -> {
-			t.setRevoked(true);
-			t.setExpired(true);
+		activeTokens.forEach(token -> {
+			token.setRevoked(true);
+			token.setExpired(true);
 		});
 
 		userTokenRepository.saveAll(activeTokens);

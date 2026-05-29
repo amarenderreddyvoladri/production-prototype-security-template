@@ -10,6 +10,8 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -325,21 +327,44 @@ public class AuthServiceImpl implements IAuthService {
 	// ======================== 📱 SESSION MANAGEMENT ========================
 
 	@Override
-	public ResponseEntity<?> getActiveSessions() {
+	public ResponseEntity<?> getActiveSessions(Pageable pageable) {
 
 		User user = getCurrentUser();
 
-		List<Map<String, Object>> sessions = userTokenRepository.findAllByUserAndRevokedFalseAndExpiredFalse(user)
-				.stream()
+		Page<UserToken> sessionPage = userTokenRepository.findAllByUserAndRevokedFalseAndExpiredFalse(user, pageable);
+
+		List<Map<String, Object>> sessions = sessionPage.getContent().stream()
 				.map(t -> Map.<String, Object>of("sessionId", t.getId(), "deviceInfo",
-						t.getDeviceInfo() != null ? t.getDeviceInfo() : "Unknown device", "ipAddress",
-						t.getIpAddress() != null ? t.getIpAddress() : "Unknown IP", "accessExpiry", t.getAccessExpiry(),
-						"refreshExpiry", t.getRefreshExpiry()))
+						t.getDeviceInfo() != null ? t.getDeviceInfo() : "Unknown device",
+
+						"ipAddress", t.getIpAddress() != null ? t.getIpAddress() : "Unknown IP",
+
+						"accessExpiry", t.getAccessExpiry(), "refreshExpiry", t.getRefreshExpiry()))
 				.collect(Collectors.toList());
 
 		auditService.log(AuditAction.VIEW_ACTIVE_SESSIONS, AuditStatus.SUCCESS, "Fetched active sessions", null);
 
-		return ResponseEntity.ok(Map.of("userId", user.getId(), "sessions", sessions, "count", sessions.size()));
+		return ResponseEntity.ok(Map.of(
+
+				"userId", user.getId(),
+
+				"sessions", sessions,
+
+				"currentPage", sessionPage.getNumber(),
+
+				"pageSize", sessionPage.getSize(),
+
+				"totalElements", sessionPage.getTotalElements(),
+
+				"totalPages", sessionPage.getTotalPages(),
+
+				"hasNext", sessionPage.hasNext(),
+
+				"hasPrevious", sessionPage.hasPrevious(),
+
+				"isFirst", sessionPage.isFirst(),
+
+				"isLast", sessionPage.isLast()));
 	}
 
 	@Override

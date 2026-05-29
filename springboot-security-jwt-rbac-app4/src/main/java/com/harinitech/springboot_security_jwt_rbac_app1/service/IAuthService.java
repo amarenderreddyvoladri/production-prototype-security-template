@@ -1,5 +1,6 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.service;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
@@ -43,8 +44,7 @@ public interface IAuthService extends UserDetailsService {
 	/**
 	 * Returns all active (non-revoked, non-expired) sessions for the current user.
 	 */
-	ResponseEntity<?> getActiveSessions();
-
+	ResponseEntity<?> getActiveSessions(Pageable pageable);
 	/**
 	 * Revokes one specific session by its DB token ID — targeted single-device
 	 * logout.
