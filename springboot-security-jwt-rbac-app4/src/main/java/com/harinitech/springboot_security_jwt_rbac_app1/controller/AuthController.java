@@ -2,6 +2,7 @@ package com.harinitech.springboot_security_jwt_rbac_app1.controller;
 
 import java.util.Map;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -83,14 +84,14 @@ public class AuthController {
 
 	// ======================== 📱 ACTIVE SESSIONS ========================
 
-	@PreAuthorize("isAuthenticated()")
 	@GetMapping("/sessions")
-	public ResponseEntity<ApiResponse<?>> getActiveSessions() {
+	public ResponseEntity<ApiResponse<?>> getActiveSessions(Pageable pageable) {
 
-		return ResponseEntity.ok(
-				ApiResponse.success("Active sessions fetched successfully", authService.getActiveSessions().getBody()));
+		log.info("AUTH API | ACTIVE SESSIONS | page={} | size={}", pageable.getPageNumber(), pageable.getPageSize());
+
+		return ResponseEntity.ok(ApiResponse.success("Active sessions fetched successfully",
+				authService.getActiveSessions(pageable).getBody()));
 	}
-
 	// ======================== ❌ REVOKE SESSION ========================
 
 	@PreAuthorize("isAuthenticated()")

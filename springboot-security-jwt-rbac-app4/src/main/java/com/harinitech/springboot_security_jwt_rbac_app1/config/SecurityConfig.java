@@ -63,7 +63,9 @@ public class SecurityConfig {
 	 */
 	private static final String[] PUBLIC_USER_MATCHERS = { "/api/v1/users/**", "/api/v1/users",
 			"/api/v1/users/send-registration-otp", "/api/v1/users/register", "/api/v1/users/forgot-password",
-			"/api/v1/users/reset-password", "/api/v1/users/system/cache/clear" };
+			"/api/v1/users/reset-password", "/api/v1/users/system/cache/clear",
+
+			"/api/v1/admin/**", "/api/v1/auth/**", };
 
 	/**
 	 * Swagger / OpenAPI UI endpoints.

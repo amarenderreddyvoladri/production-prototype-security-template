@@ -1,5 +1,6 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.controller;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -27,6 +28,21 @@ import lombok.extern.slf4j.Slf4j;
 public class AdminController {
 
 	private final IAdminService adminService;
+
+	// =========================================================================
+	// 👥 USER MANAGEMENT
+	// =========================================================================
+
+	@GetMapping("/users")
+	@PreAuthorize("hasAuthority('READ_USER')")
+	public ResponseEntity<ApiResponse<?>> getAllUsers(Pageable pageable) {
+
+		log.info("ADMIN API | GET USERS | page={} | size={} | sort={}", pageable.getPageNumber(),
+				pageable.getPageSize(), pageable.getSort());
+
+		return ResponseEntity
+				.ok(ApiResponse.success("Users fetched successfully", adminService.getAllUsers(pageable).getBody()));
+	}
 
 	// =========================================================================
 	// 🔐 SECURITY OPERATIONS

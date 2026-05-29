@@ -1,5 +1,6 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.service;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.model.Status;
@@ -24,7 +25,7 @@ public interface IAdminService {
 
 	// ── READ ─────────────────────────────────────────────────────────────────
 	/** Returns all registered users. Requires READ_USER. */
-	ResponseEntity<?> getAllUsers();
+	ResponseEntity<?> getAllUsers(Pageable pageable);
 
 	/** Returns a single user by ID. Requires READ_USER. */
 	ResponseEntity<?> getUserById(Long userId);
