@@ -21,10 +21,8 @@ public class PaginationConfig {
 			// size=10
 			// sort=createdAt,desc
 			pageable.setFallbackPageable(PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "createdAt")));
-
 			// Prevent huge payload attacks
 			pageable.setMaxPageSize(100);
-
 			// page starts from 0
 			pageable.setFallbackPageable(PageRequest.of(0, 10));
 
