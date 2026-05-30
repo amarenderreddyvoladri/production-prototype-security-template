@@ -253,20 +253,23 @@ public class AdminServiceImpl implements IAdminService {
 	// ======================== 📋 PENDING REGISTRATIONS ========================
 
 	@Override
-	public ResponseEntity<?> getPendingRegistrations() {
+	public ResponseEntity<?> getPendingRegistrations(Pageable pageable) {
+
 		requirePermission("VIEW_USERS");
 
-		List<User> pending = userRepository.findByStatus(Status.PENDING_APPROVAL);
-		List<Map<String, Object>> result = pending.stream()
-				.map(user -> Map.<String, Object>of("userId", user.getId(), "email", user.getUsername(),
-						"requestedRole", user.getRequestedRole(), "registeredAt", user.getPasswordChangedAt()))
-				.toList();
+		Page<User> pendingPage = userRepository.findByStatus(Status.PENDING_APPROVAL, pageable);
 
-		log.info("PENDING REGISTRATIONS FETCHED | count={} | by userId={}", pending.size(), getCurrentUserId());
+		Page<Map<String, Object>> responsePage = pendingPage
+				.map(user -> Map.<String, Object>of("userId", user.getId(), "email", user.getUsername(),
+						"requestedRole", user.getRequestedRole(), "registeredAt", user.getPasswordChangedAt()));
+
+		log.info("PENDING REGISTRATIONS FETCHED | page={} | size={} | totalElements={} | by userId={}",
+				pageable.getPageNumber(), pageable.getPageSize(), pendingPage.getTotalElements(), getCurrentUserId());
+
 		auditService.log(AuditAction.VIEW_PENDING_REGISTRATIONS, AuditStatus.SUCCESS,
 				"Fetched pending employee registrations", null);
 
-		return ResponseEntity.ok(result);
+		return ResponseEntity.ok(responsePage);
 	}
 
 	// ======================== ✅ APPROVE (HIERARCHICAL) ========================

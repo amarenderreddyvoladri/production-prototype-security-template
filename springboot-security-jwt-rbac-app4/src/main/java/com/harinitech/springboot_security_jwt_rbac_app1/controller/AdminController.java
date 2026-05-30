@@ -206,10 +206,13 @@ public class AdminController {
 
 	@GetMapping("/pending-registrations")
 	@PreAuthorize("hasAuthority('VIEW_USERS')")
-	public ResponseEntity<ApiResponse<?>> getPendingRegistrations() {
-		log.info("ADMIN API | FETCH PENDING REGISTRATIONS");
-		return ResponseEntity.ok(
-				ApiResponse.success("Pending registrations fetched", adminService.getPendingRegistrations().getBody()));
+	public ResponseEntity<ApiResponse<?>> getPendingRegistrations(Pageable pageable) {
+
+		log.info("ADMIN API | FETCH PENDING REGISTRATIONS | page={} | size={} | sort={}", pageable.getPageNumber(),
+				pageable.getPageSize(), pageable.getSort());
+
+		return ResponseEntity.ok(ApiResponse.success("Pending registrations fetched",
+				adminService.getPendingRegistrations(pageable).getBody()));
 	}
 
 	@PostMapping("/registrations/{id}/approve")
