@@ -109,7 +109,7 @@ public interface IAdminService {
 
 	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION MANAGEMENT
 	// ========================
-	ResponseEntity<?> getPendingRegistrations();
+	ResponseEntity<?> getPendingRegistrations(Pageable pageable);
 
 	ResponseEntity<?> approveRegistration(Long userId, String assignedRole);
 
