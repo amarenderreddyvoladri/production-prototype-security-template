@@ -1,0 +1,51 @@
+services:
+
+  mysql:
+    image: mysql:8.4
+
+    container_name: security-mysql
+
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: jwt_security
+
+    ports:
+      - "3307:3306"
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build: .
+
+    container_name: security-app
+
+    restart: unless-stopped
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    ports:
+      - "8181:8181"
+
+    environment:
+      DB_DOCKER_URL: ${DB_DOCKER_URL}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_SENDER_MAIL: ${SENDGRID_SENDER_MAIL}
+      SENDGRID_SENDER_NAME: ${SENDGRID_SENDER_NAME}
+
+volumes:
+  mysql_data:
