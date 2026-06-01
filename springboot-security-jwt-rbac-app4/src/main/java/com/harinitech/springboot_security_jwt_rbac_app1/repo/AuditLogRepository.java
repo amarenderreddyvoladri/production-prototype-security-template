@@ -1,6 +1,7 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.repo;
 
 import java.time.Instant;
+
 import java.util.List;
 
 import org.springframework.data.domain.Page;
@@ -11,6 +12,10 @@ import org.springframework.data.jpa.repository.Query;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.AuditLog;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
+
+	// ======================== 👤 all logs from app ========================
+
+	Page<AuditLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
 	// ======================== 👤 USER HISTORY ========================
 

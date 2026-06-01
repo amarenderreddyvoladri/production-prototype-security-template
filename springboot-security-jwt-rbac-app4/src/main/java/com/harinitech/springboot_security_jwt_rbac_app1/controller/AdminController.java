@@ -1,5 +1,6 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.controller;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.model.ApiResponse;
@@ -26,6 +28,21 @@ import lombok.extern.slf4j.Slf4j;
 public class AdminController {
 
 	private final IAdminService adminService;
+
+	// =========================================================================
+	// 👥 USER MANAGEMENT
+	// =========================================================================
+
+	@GetMapping("/users")
+	@PreAuthorize("hasAuthority('READ_USER')")
+	public ResponseEntity<ApiResponse<?>> getAllUsers(Pageable pageable) {
+
+		log.info("ADMIN API | GET USERS | page={} | size={} | sort={}", pageable.getPageNumber(),
+				pageable.getPageSize(), pageable.getSort());
+
+		return ResponseEntity
+				.ok(ApiResponse.success("Users fetched successfully", adminService.getAllUsers(pageable).getBody()));
+	}
 
 	// =========================================================================
 	// 🔐 SECURITY OPERATIONS
@@ -185,5 +202,33 @@ public class AdminController {
 
 		return ResponseEntity.ok(ApiResponse.success("User permanently deleted successfully",
 				adminService.deleteUserPermanently(id).getBody()));
+	}
+
+	@GetMapping("/pending-registrations")
+	@PreAuthorize("hasAuthority('VIEW_USERS')")
+	public ResponseEntity<ApiResponse<?>> getPendingRegistrations(Pageable pageable) {
+
+		log.info("ADMIN API | FETCH PENDING REGISTRATIONS | page={} | size={} | sort={}", pageable.getPageNumber(),
+				pageable.getPageSize(), pageable.getSort());
+
+		return ResponseEntity.ok(ApiResponse.success("Pending registrations fetched",
+				adminService.getPendingRegistrations(pageable).getBody()));
+	}
+
+	@PostMapping("/registrations/{id}/approve")
+	@PreAuthorize("hasAuthority('ASSIGN_EMPLOYEE') or hasAuthority('ASSIGN_MANAGER')") // adjust as needed
+	public ResponseEntity<ApiResponse<?>> approveRegistration(@PathVariable Long id, @RequestParam String role) {
+		log.warn("ADMIN API | APPROVE REGISTRATION | userId={} | role={}", id, role);
+		return ResponseEntity
+				.ok(ApiResponse.success("Registration approved", adminService.approveRegistration(id, role).getBody()));
+	}
+
+	@PostMapping("/registrations/{id}/reject")
+	@PreAuthorize("hasAuthority('UPDATE_USER_STATUS')")
+	public ResponseEntity<ApiResponse<?>> rejectRegistration(@PathVariable Long id,
+			@RequestParam(defaultValue = "Rejected by administrator") String reason) {
+		log.warn("ADMIN API | REJECT REGISTRATION | userId={} | reason={}", id, reason);
+		return ResponseEntity.ok(
+				ApiResponse.success("Registration rejected", adminService.rejectRegistration(id, reason).getBody()));
 	}
 }

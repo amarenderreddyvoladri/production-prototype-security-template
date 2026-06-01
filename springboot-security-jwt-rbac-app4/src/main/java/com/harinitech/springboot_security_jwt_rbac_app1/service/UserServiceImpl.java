@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditAction;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditStatus;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.EmployeeRegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.OtpPurpose;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.Status;
@@ -160,32 +162,76 @@ public class UserServiceImpl implements IUserService {
 	// ======================== 🔑 PASSWORD ========================
 
 	@Override
-	public ResponseEntity<?> changePassword(String oldPassword, String newPassword) {
+	public ResponseEntity<?> changePassword(String currentPassword, String newPassword, String confirmPassword) {
 
 		User user = getCurrentUser();
 
-		if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
-			return ResponseEntity.badRequest().body("Old password is incorrect. Please try again.");
+		// ========================
+		// VALIDATE CURRENT PASSWORD
+		// ========================
+
+		if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+
+			log.warn("CHANGE PASSWORD FAILED | Invalid current password | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("Current password is incorrect.");
 		}
+
+		// ========================
+		// CONFIRM PASSWORD MATCH
+		// ========================
+
+		if (!newPassword.equals(confirmPassword)) {
+
+			log.warn("CHANGE PASSWORD FAILED | Password mismatch | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("New password and confirm password do not match.");
+		}
+
+		// ========================
+		// PREVENT SAME PASSWORD REUSE
+		// ========================
 
 		if (passwordEncoder.matches(newPassword, user.getPassword())) {
-			return ResponseEntity.badRequest().body("New password cannot be the same as your current password.");
+
+			log.warn("CHANGE PASSWORD FAILED | Same password reuse attempt | userId={}", user.getId());
+
+			return ResponseEntity.badRequest().body("New password cannot be same as current password.");
 		}
 
+		// ========================
+		// UPDATE PASSWORD
+		// ========================
+
 		user.setPassword(passwordEncoder.encode(newPassword));
-		user.setPasswordChangedAt(Instant.now()); // ✅ NEW
-		user.setForcePasswordChange(false); // ✅ RESET FLAG
+
+		// security metadata
+		user.setPasswordChangedAt(Instant.now());
+
+		// reset forced password change flag
+		user.setForcePasswordChange(false);
+
 		userRepository.save(user);
 
-		// Force logout from all devices after password change (security best practice)
+		// ========================
+		// REVOKE ALL ACTIVE SESSIONS
+		// ========================
+
 		revokeAllActiveTokens(user);
+
+		// clear current authentication
 		SecurityContextHolder.clearContext();
 
-		log.info("PASSWORD CHANGED | userId={}", user.getId());
+		log.info("PASSWORD CHANGED SUCCESSFULLY | userId={}", user.getId());
 
 		auditService.log(AuditAction.PASSWORD_CHANGED, AuditStatus.SUCCESS, "Password changed successfully", null);
 
-		return ResponseEntity.ok(Map.of("message", "Password changed successfully", "userId", user.getId()));
+		// ========================
+		// RESPONSE
+		// ========================
+
+		return ResponseEntity
+				.ok(Map.of("message", "Password changed successfully. Please login again.", "userId", user.getId()));
 	}
 
 	@Override
@@ -287,6 +333,62 @@ public class UserServiceImpl implements IUserService {
 		otpRepository.invalidateAllActiveOtps(email);
 		otpRepository.save(token);
 	}
+
+	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
+
+	@Override
+	public ResponseEntity<?> employeeRegistration(EmployeeRegisterRequest request) {
+		String email = normalize(request.getEmail());
+
+		// 1. Validate OTP (reuse existing registration OTP validation)
+		validateOtp(email, request.getOtp());
+
+		// 2. Prevent duplicate accounts
+		if (userRepository.findByUsername(email).isPresent()) {
+			throw new RuntimeException("An account with this email already exists.");
+		}
+
+		// 3. Whitelist allowed employee roles
+		Set<String> allowedRoles = Set.of("EMPLOYEE", "MANAGER", "VENDOR", "HR", "FINANCE", "SUPPORT");
+		String requestedRole = request.getRequestedRole().toUpperCase();
+		if (!allowedRoles.contains(requestedRole)) {
+			throw new RuntimeException("Invalid role requested. Allowed: " + allowedRoles);
+		}
+
+		// 4. Create user in PENDING state (minimal role = USER while pending)
+		Role placeholderRole = getRole("USER");
+		User user = new User();
+		user.setUsername(email);
+		user.setPassword(passwordEncoder.encode(request.getPassword()));
+		user.setRole(placeholderRole);
+		user.setStatus(Status.PENDING_APPROVAL);
+		user.setEnabled(false);
+		user.setAccountLocked(false);
+		user.setForcePasswordChange(false);
+		user.setFailedLoginAttempts(0);
+		user.setPasswordChangedAt(Instant.now());
+		user.setRequestedRole(requestedRole);
+		userRepository.save(user);
+
+		// 5. Notify all ADMINs about new pending registration
+		notifyAdminsOfNewRegistration(user);
+
+		log.info("EMPLOYEE REGISTRATION SUBMITTED | email={} | requestedRole={}", email, requestedRole);
+		auditService.log(AuditAction.REGISTER, AuditStatus.SUCCESS,
+				"Employee registration submitted for role " + requestedRole, null);
+
+		return ResponseEntity.ok(Map.of("message",
+				"Registration submitted. You will receive a confirmation once approved.", "email", email));
+	}
+
+	// Helper: notify all users with ADMIN role
+	private void notifyAdminsOfNewRegistration(User pendingUser) {
+		List<User> admins = userRepository.findAll().stream()
+				.filter(u -> u.getRole() != null && "ADMIN".equals(u.getRole().getName())).toList();
+		admins.forEach(admin -> emailService.sendPendingApprovalNotification(admin.getUsername(), pendingUser));
+	}
+
+	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
 
 	// ======================== 🧰 PRIVATE HELPERS ========================
 

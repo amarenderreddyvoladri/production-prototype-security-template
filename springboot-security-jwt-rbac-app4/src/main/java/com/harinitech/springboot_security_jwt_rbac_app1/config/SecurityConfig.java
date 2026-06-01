@@ -61,9 +61,9 @@ public class SecurityConfig {
 	/**
 	 * User endpoints that require NO token (self-service flows before login).
 	 */
-	private static final String[] PUBLIC_USER_MATCHERS = { "/api/v1/users/**", "/api/v1/users",
-			"/api/v1/users/send-registration-otp", "/api/v1/users/register", "/api/v1/users/forgot-password",
-			"/api/v1/users/reset-password", "/api/v1/users/system/cache/clear" };
+	private static final String[] PUBLIC_USER_MATCHERS = { "/api/v1/users", "/api/v1/users/send-registration-otp",
+			"/api/v1/users/register", "/api/v1/users/forgot-password", "/api/v1/users/reset-password",
+			"/api/v1/users/system/cache/clear" };
 
 	/**
 	 * Swagger / OpenAPI UI endpoints.

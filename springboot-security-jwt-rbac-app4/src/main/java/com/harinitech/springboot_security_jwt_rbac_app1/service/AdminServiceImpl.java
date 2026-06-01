@@ -6,6 +6,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -54,14 +56,25 @@ public class AdminServiceImpl implements IAdminService {
 	@Autowired
 	private AuditService auditService;
 
+	@Autowired
+	private EmailService emailService;
+
 	// ======================== 📋 READ ========================
 
 	@Override
-	public ResponseEntity<?> getAllUsers() {
-		List<User> users = userRepository.findAll();
-		log.info("Admin [userId={}] fetched all users. Count: {}", getCurrentUserId(), users.size());
-		auditService.log(AuditAction.VIEW_USERS, AuditStatus.SUCCESS, "Admin fetched all users", null);
-		return ResponseEntity.ok(users.stream().map(UserMapper::toSummary).toList());
+	@Transactional(readOnly = true)
+	public ResponseEntity<?> getAllUsers(Pageable pageable) {
+
+		Page<User> userPage = userRepository.findAll(pageable);
+
+		Page<?> responsePage = userPage.map(UserMapper::toSummary);
+
+		log.info("ADMIN USERS FETCHED | adminId={} | page={} | size={} | totalElements={}", getCurrentUserId(),
+				pageable.getPageNumber(), pageable.getPageSize(), userPage.getTotalElements());
+
+		auditService.log(AuditAction.VIEW_USERS, AuditStatus.SUCCESS, "Admin fetched paginated users", null);
+
+		return ResponseEntity.ok(responsePage);
 	}
 
 	@Override
@@ -218,6 +231,139 @@ public class AdminServiceImpl implements IAdminService {
 				"sessionsEnded", revokedCount));
 	}
 
+	// ======================== 👑 HIERARCHICAL APPROVAL POLICY
+	// ========================
+
+	/**
+	 * Centralised approval hierarchy. Key = Approver's role | Value = Roles they
+	 * can approve.
+	 * 
+	 * For production, externalise to application.yml
+	 * using @ConfigurationProperties.
+	 */
+	private static final Map<String, Set<String>> APPROVAL_HIERARCHY = Map.of("ADMIN",
+			Set.of("MANAGER", "EMPLOYEE", "VENDOR", "HR", "FINANCE", "SUPPORT"), "MANAGER",
+			Set.of("VENDOR", "HR", "EMPLOYEE", "SUPPORT"), "HR", Set.of("EMPLOYEE"));
+
+	private boolean canApproveRole(String approverRole, String targetRole) {
+		Set<String> allowed = APPROVAL_HIERARCHY.get(approverRole.toUpperCase());
+		return allowed != null && allowed.contains(targetRole.toUpperCase());
+	}
+
+	// ======================== 📋 PENDING REGISTRATIONS ========================
+
+	@Override
+	public ResponseEntity<?> getPendingRegistrations(Pageable pageable) {
+
+		requirePermission("VIEW_USERS");
+
+		Page<User> pendingPage = userRepository.findByStatus(Status.PENDING_APPROVAL, pageable);
+
+		Page<Map<String, Object>> responsePage = pendingPage
+				.map(user -> Map.<String, Object>of("userId", user.getId(), "email", user.getUsername(),
+						"requestedRole", user.getRequestedRole(), "registeredAt", user.getPasswordChangedAt()));
+
+		log.info("PENDING REGISTRATIONS FETCHED | page={} | size={} | totalElements={} | by userId={}",
+				pageable.getPageNumber(), pageable.getPageSize(), pendingPage.getTotalElements(), getCurrentUserId());
+
+		auditService.log(AuditAction.VIEW_PENDING_REGISTRATIONS, AuditStatus.SUCCESS,
+				"Fetched pending employee registrations", null);
+
+		return ResponseEntity.ok(responsePage);
+	}
+
+	// ======================== ✅ APPROVE (HIERARCHICAL) ========================
+
+	@Override
+	@Transactional
+	public ResponseEntity<?> approveRegistration(Long userId, String assignedRole) {
+		requirePermission("ASSIGN_" + assignedRole.toUpperCase());
+
+		User admin = getCurrentUser();
+		String adminRole = admin.getRole().getName();
+
+		User pendingUser = userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+
+		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
+			throw new RuntimeException("User is not in pending approval state.");
+		}
+
+		String requestedRole = pendingUser.getRequestedRole();
+		if (requestedRole == null) {
+			throw new RuntimeException("No requested role found for this user.");
+		}
+
+		// Hierarchical check
+		if (!canApproveRole(adminRole, requestedRole)) {
+			log.warn("APPROVAL BLOCKED | adminId={} | adminRole={} | targetRole={}", admin.getId(), adminRole,
+					requestedRole);
+			throw new RuntimeException("You are not authorised to approve registrations for role: " + requestedRole);
+		}
+
+		// Final role (could be same as requested, or admin can override)
+		String finalRole = assignedRole != null ? assignedRole.toUpperCase() : requestedRole;
+		Role role = roleRepository.findByName(finalRole)
+				.orElseThrow(() -> new RuntimeException("Role '" + finalRole + "' does not exist."));
+
+		pendingUser.setRole(role);
+		pendingUser.setStatus(Status.ACTIVE);
+		pendingUser.setEnabled(true);
+		pendingUser.setRequestedRole(null);
+		userRepository.save(pendingUser);
+
+		emailService.sendApprovalConfirmation(pendingUser.getUsername(), finalRole);
+
+		log.info("REGISTRATION APPROVED | adminId={} | userId={} | finalRole={}", admin.getId(), userId, finalRole);
+		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
+				"Approved employee registration. Role: " + finalRole, null);
+
+		return ResponseEntity
+				.ok(Map.of("message", "User approved successfully.", "userId", userId, "assignedRole", finalRole));
+	}
+
+	// ======================== ❌ REJECT ========================
+
+	@Override
+	@Transactional
+	public ResponseEntity<?> rejectRegistration(Long userId, String reason) {
+		requirePermission("UPDATE_USER_STATUS");
+
+		User admin = getCurrentUser();
+		User pendingUser = userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+
+		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
+			throw new RuntimeException("User is not in pending approval state.");
+		}
+
+		pendingUser.setStatus(Status.INACTIVE);
+		pendingUser.setEnabled(false);
+		pendingUser.setRequestedRole(null);
+		userRepository.save(pendingUser);
+
+		emailService.sendRejectionNotice(pendingUser.getUsername(), reason);
+
+		log.info("REGISTRATION REJECTED | adminId={} | userId={} | reason={}", admin.getId(), userId, reason);
+		auditService.log(AuditAction.REGISTRATION_REJECTED, AuditStatus.SUCCESS,
+				"Rejected employee registration. Reason: " + reason, null);
+
+		return ResponseEntity.ok(Map.of("message", "User registration rejected.", "userId", userId, "reason", reason));
+	}
+
+	// ======================== 🧰 HELPER ========================
+
+	/**
+	 * Returns the currently authenticated admin user. Principal is userId (Long as
+	 * String) – consistent with JwtFilter contract.
+	 */
+	private User getCurrentUser() {
+		Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+		Long userId = Long.parseLong(principal.toString());
+		return userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("Authenticated admin not found."));
+	}
+
 	// ======================== 🧰 PRIVATE HELPERS ========================
 
 	/**
@@ -285,12 +431,14 @@ public class AdminServiceImpl implements IAdminService {
 
 		List<UserToken> activeTokens = userTokenRepository.findAllByUserAndRevokedFalseAndExpiredFalse(user);
 
-		if (activeTokens.isEmpty())
+		if (activeTokens.isEmpty()) {
+			log.info("NO ACTIVE TOKENS FOUND | targetUserId={}", user.getId());
 			return 0;
+		}
 
-		activeTokens.forEach(t -> {
-			t.setRevoked(true);
-			t.setExpired(true);
+		activeTokens.forEach(token -> {
+			token.setRevoked(true);
+			token.setExpired(true);
 		});
 
 		userTokenRepository.saveAll(activeTokens);
