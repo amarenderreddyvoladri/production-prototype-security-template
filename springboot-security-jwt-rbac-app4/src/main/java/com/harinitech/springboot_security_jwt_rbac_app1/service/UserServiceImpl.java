@@ -13,7 +13,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.harinitech.springboot_security_jwt_rbac_app1.entity.OtpToken;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
@@ -21,6 +20,7 @@ import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditAction;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.AuditStatus;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.EmployeeRegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.OtpPurpose;
+import com.harinitech.springboot_security_jwt_rbac_app1.model.RedisOtpData;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RegisterRequest;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.Status;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.UserResponseDto;
@@ -73,6 +73,9 @@ public class UserServiceImpl implements IUserService {
 	@Autowired
 	private AuditService auditService;
 
+	@Autowired
+	private RedisOtpService redisOtpService;
+
 	// ======================== 👥 USERS ========================
 
 	@Override
@@ -105,15 +108,22 @@ public class UserServiceImpl implements IUserService {
 
 		String otp = generateOtp();
 
-		OtpToken token = OtpToken.builder().username(normalizedEmail).otpHash(passwordEncoder.encode(otp)) // ✅ HASHED
-																											// OTP
-				.expiryTime(Instant.now().plusSeconds(300)) // ✅ Instant
-				.used(false).attempts(0).purpose(OtpPurpose.REGISTER) // ✅ PURPOSE
-				.build();
+//		OtpToken token = OtpToken.builder().username(normalizedEmail).otpHash(passwordEncoder.encode(otp)) // ✅ HASHED
+//																											// OTP
+//				.expiryTime(Instant.now().plusSeconds(300)) // ✅ Instant
+//				.used(false).attempts(0).purpose(OtpPurpose.REGISTER) // ✅ PURPOSE
+//				.build();
+//
+//		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+//
+//		otpRepository.save(token);
 
-		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+		// Using Redis for OTP storage instead of DB for better performance and
+		// auto-expiry handling
+		RedisOtpData redisOtp = RedisOtpData.builder().username(normalizedEmail).otpHash(passwordEncoder.encode(otp))
+				.purpose(OtpPurpose.REGISTER).expiryTime(Instant.now().plusSeconds(300)).attempts(0).build();
 
-		otpRepository.save(token);
+		redisOtpService.saveOtp(redisOtp);
 
 		emailService.sendOtp(normalizedEmail, otp);
 
@@ -246,11 +256,18 @@ public class UserServiceImpl implements IUserService {
 
 		String otp = generateOtp();
 
-		OtpToken token = OtpToken.builder().username(user.getUsername()).otpHash(passwordEncoder.encode(otp))
-				.expiryTime(Instant.now().plusSeconds(300)).attempts(0).used(false).purpose(OtpPurpose.RESET_PASSWORD)
-				.build();
+//		OtpToken token = OtpToken.builder().username(user.getUsername()).otpHash(passwordEncoder.encode(otp))
+//				.expiryTime(Instant.now().plusSeconds(300)).attempts(0).used(false).purpose(OtpPurpose.RESET_PASSWORD)
+//				.build();
+//
+//		otpRepository.save(token);
 
-		otpRepository.save(token);
+		// Using Redis for OTP storage instead of DB for better performance and
+		// auto-expiry handling
+		RedisOtpData redisOtp = RedisOtpData.builder().username(user.getUsername()).otpHash(passwordEncoder.encode(otp))
+				.purpose(OtpPurpose.RESET_PASSWORD).expiryTime(Instant.now().plusSeconds(300)).attempts(0).build();
+
+		redisOtpService.saveOtp(redisOtp);
 
 		emailService.sendOtp(user.getUsername(), otp);
 
@@ -289,7 +306,10 @@ public class UserServiceImpl implements IUserService {
 
 	private void validateOtpForPurpose(String email, String otpInput, OtpPurpose purpose) {
 
-		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+//		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+//				.orElseThrow(() -> new RuntimeException("No OTP found."));
+
+		RedisOtpData token = redisOtpService.getOtp(normalize(email), purpose)
 				.orElseThrow(() -> new RuntimeException("No OTP found."));
 
 		email = normalize(email);
@@ -306,10 +326,10 @@ public class UserServiceImpl implements IUserService {
 			throw new RuntimeException("Invalid OTP type.");
 		}
 
-		if (token.isUsed()) {
-			log.warn("OTP REUSE DETECTED | email={}", email);
-			throw new RuntimeException("OTP already used.");
-		}
+//		if (token.isUsed()) {
+//			log.warn("OTP REUSE DETECTED | email={}", email);
+//			throw new RuntimeException("OTP already used.");
+//		}
 
 		if (token.getExpiryTime().isBefore(Instant.now())) {
 			log.warn("OTP EXPIRED | email={}", email);
@@ -321,7 +341,8 @@ public class UserServiceImpl implements IUserService {
 			token.setAttempts(token.getAttempts() + 1);
 			token.setLastAttemptAt(Instant.now());
 
-			otpRepository.save(token);
+//			otpRepository.save(token);
+			redisOtpService.updateOtp(token);
 
 			log.warn("OTP FAILED | email={} | attempts={}", email, token.getAttempts());
 
@@ -329,9 +350,11 @@ public class UserServiceImpl implements IUserService {
 
 			throw new RuntimeException("Incorrect OTP.");
 		}
-		token.setUsed(true);
-		otpRepository.invalidateAllActiveOtps(email);
-		otpRepository.save(token);
+//		token.setUsed(true);
+//		otpRepository.invalidateAllActiveOtps(email);
+//		otpRepository.save(token);
+
+		redisOtpService.deleteOtp(email, purpose);
 	}
 
 	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
@@ -394,7 +417,10 @@ public class UserServiceImpl implements IUserService {
 
 	private void validateOtp(String email, String otpInput) {
 
-		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+//		OtpToken token = otpRepository.findTopByUsernameOrderByIdDesc(normalize(email))
+//				.orElseThrow(() -> new RuntimeException("No OTP found for '" + email + "'. Please request a new OTP."));
+
+		RedisOtpData token = redisOtpService.getOtp(normalize(email), OtpPurpose.REGISTER)
 				.orElseThrow(() -> new RuntimeException("No OTP found for '" + email + "'. Please request a new OTP."));
 
 		String normalizedEmail = normalize(email);
@@ -404,9 +430,9 @@ public class UserServiceImpl implements IUserService {
 			throw new RuntimeException("Invalid OTP type.");
 		}
 
-		if (token.isUsed()) {
-			throw new RuntimeException("This OTP has already been used.");
-		}
+//		if (token.isUsed()) {
+//			throw new RuntimeException("This OTP has already been used.");
+//		}
 
 		if (token.getExpiryTime().isBefore(Instant.now())) {
 			throw new RuntimeException("OTP has expired.");
@@ -423,7 +449,8 @@ public class UserServiceImpl implements IUserService {
 
 			token.setAttempts(token.getAttempts() + 1);
 			token.setLastAttemptAt(Instant.now());
-			otpRepository.save(token);
+//			otpRepository.save(token);
+			redisOtpService.updateOtp(token);
 
 			log.warn("OTP FAILED | email={} | attempts={}", normalizedEmail, token.getAttempts());
 
@@ -432,11 +459,13 @@ public class UserServiceImpl implements IUserService {
 			throw new RuntimeException("Incorrect OTP.");
 		}
 
-		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+//		otpRepository.invalidateAllActiveOtps(normalizedEmail);
+//
+//		token.setUsed(true);
+//
+//		otpRepository.save(token);
 
-		token.setUsed(true);
-
-		otpRepository.save(token);
+		redisOtpService.deleteOtp(normalizedEmail, OtpPurpose.REGISTER);
 
 		log.info("OTP VERIFIED SUCCESS | email={} | purpose=REGISTER", email);
 	}

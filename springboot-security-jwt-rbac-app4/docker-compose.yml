@@ -24,6 +24,22 @@ services:
       retries: 10
       start_period: 30s
 
+  redis:
+    image: redis:7-alpine
+
+    container_name: security-redis
+
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   app:
     build: .
 
@@ -35,6 +51,9 @@ services:
       mysql:
         condition: service_healthy
 
+      redis:
+        condition: service_healthy
+
     ports:
       - "8181:8181"
 
@@ -42,10 +61,15 @@ services:
       DB_DOCKER_URL: ${DB_DOCKER_URL}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
+
       JWT_SECRET: ${JWT_SECRET}
+
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
       SENDGRID_SENDER_MAIL: ${SENDGRID_SENDER_MAIL}
       SENDGRID_SENDER_NAME: ${SENDGRID_SENDER_NAME}
+
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
 
 volumes:
   mysql_data:
