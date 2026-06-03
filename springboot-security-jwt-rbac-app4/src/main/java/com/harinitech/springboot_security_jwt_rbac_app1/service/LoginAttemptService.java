@@ -25,32 +25,33 @@ public class LoginAttemptService {
 	@Autowired
 	private AuditService auditService;
 
+	@Autowired
+	private RedisLoginAttemptService redisLoginAttemptService;
+
 	@Value("${security.account.max-login-attempts}")
 	private int maxLoginAttempts;
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void recordFailedAttempt(User user, String username) {
 
-		int attempts = user.getFailedLoginAttempts() + 1;
+		long attempts = redisLoginAttemptService.increment(username);
 
-		user.setFailedLoginAttempts(attempts);
+		boolean accountLocked = user.isAccountLocked();
 
-		boolean accountLocked = false;
-
-		if (attempts >= maxLoginAttempts) {
+		if (!accountLocked && attempts >= maxLoginAttempts) {
 
 			user.setAccountLocked(true);
 			user.setLockTime(Instant.now());
 
 			accountLocked = true;
 
+			userRepository.saveAndFlush(user);
+
 			log.error("ACCOUNT LOCKED | userId={} | username={} | attempts={}", user.getId(), username, attempts);
 
 			auditService.log(AuditAction.ACCOUNT_LOCKED, AuditStatus.BLOCKED,
 					"Account locked due to multiple failed login attempts", null);
 		}
-
-		userRepository.saveAndFlush(user);
 
 		log.warn("LOGIN FAILED | userId={} | username={} | attempts={} | locked={}", user.getId(), username, attempts,
 				accountLocked);
@@ -61,11 +62,15 @@ public class LoginAttemptService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void resetFailedAttempts(User user, String username) {
 
-		user.setFailedLoginAttempts(0);
-		user.setAccountLocked(false);
-		user.setLockTime(null);
+		redisLoginAttemptService.reset(username);
 
-		userRepository.saveAndFlush(user);
+		if (user.isAccountLocked()) {
+
+			user.setAccountLocked(false);
+			user.setLockTime(null);
+
+			userRepository.saveAndFlush(user);
+		}
 
 		log.info("FAILED LOGIN ATTEMPTS RESET | userId={} | username={}", user.getId(), username);
 	}
