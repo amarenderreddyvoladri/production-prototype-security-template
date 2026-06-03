@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.OtpPurpose;
 import com.harinitech.springboot_security_jwt_rbac_app1.model.RedisOtpData;
 
@@ -19,6 +20,8 @@ public class RedisOtpService {
 
 	private final RedisTemplate<String, Object> redisTemplate;
 
+	private final ObjectMapper objectMapper;
+
 	private String buildKey(String email, OtpPurpose purpose) {
 
 		return "otp:%s:%s".formatted(purpose.name(), email.trim().toLowerCase());
@@ -31,7 +34,15 @@ public class RedisOtpService {
 
 	public Optional<RedisOtpData> getOtp(String email, OtpPurpose purpose) {
 
-		return Optional.ofNullable((RedisOtpData) redisTemplate.opsForValue().get(buildKey(email, purpose)));
+		Object value = redisTemplate.opsForValue().get(buildKey(email, purpose));
+
+		if (value == null) {
+			return Optional.empty();
+		}
+
+		RedisOtpData otpData = objectMapper.convertValue(value, RedisOtpData.class);
+
+		return Optional.of(otpData);
 	}
 
 	public void updateOtp(RedisOtpData otpData) {
