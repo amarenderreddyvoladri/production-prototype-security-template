@@ -1,0 +1,39 @@
+services:
+
+  config-server:
+
+    build:
+      context: .
+
+    image: config-server:latest
+
+    container_name: config-server
+
+    restart: unless-stopped
+
+    ports:
+      - "8888:8888"
+
+    environment:
+      SPRING_PROFILES_ACTIVE: native
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8888/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    networks:
+      - spring-cloud-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+
+  spring-cloud-network:
+    driver: bridge
