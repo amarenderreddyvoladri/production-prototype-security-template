@@ -1,92 +1,181 @@
-HELP.md
-target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
-.vscode/
-.metadata/
-.sonarlint/
-*.log
-*.zip
-*.env
 # ======================
+
 # BUILD OUTPUT
+
 # ======================
+
 target/
 build/
 out/
 
 # ======================
-# IDE FILES
+
+# LOGS
+
 # ======================
+
+*.log
+logs/
+*.out
+
+# ======================
+
+# SPRING BOOT
+
+# ======================
+
+HELP.md
+
+# ======================
+
+# ENVIRONMENT / SECRETS
+
+# ======================
+
+.env
+.env.*
+*.env
+
+application-secret.properties
+application-secret.yml
+application-secret.yaml
+
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.jks
+*.keystore
+
+# ======================
+
+# IDE - STS / ECLIPSE
+
+# ======================
+
 .metadata/
 .settings/
 .classpath
 .project
 .factorypath
-.sonarlint/
+.springBeans
+.sts4-cache
+
+# ======================
+
+# IDE - INTELLIJ
+
+# ======================
+
 .idea/
 *.iml
+*.ipr
+*.iws
+
+# ======================
+
+# IDE - VS CODE
+
+# ======================
+
 .vscode/
 
 # ======================
-# SPRING BOOT / LOGS
-# ======================
-*.log
-logs/
+
+# STATIC ANALYSIS
 
 # ======================
-# SECURITY / SECRETS
-# ======================
-.env
-application-secret.properties
-*.env
-*.pem
-*.key
-*.jks
+
+.sonarlint/
 
 # ======================
-# OS FILES
-# ======================
-.DS_Store
-Thumbs.db
+
+# NETBEANS
 
 # ======================
-# MAVEN / GRADLE
+
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
 # ======================
-.mvn/
+
+# MAVEN
+
+# ======================
+
+!.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.properties
+!mvnw
+!mvnw.cmd
+
+# ======================
+
+# GRADLE
+
+# ======================
+
 .gradle/
 
 # ======================
-# TEMP FILES
+
+# OPERATING SYSTEM FILES
+
 # ======================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ======================
+
+# ARCHIVES
+
+# ======================
+
+*.zip
+*.tar
+*.tar.gz
+*.rar
+
+# ======================
+
+# TEMP FILES
+
+# ======================
+
 *.tmp
+*.temp
 *.bak
 *.swp
+*.swo
+
+# ======================
+
+# DOCKER
+
+# ======================
+
+docker-compose.override.yml
+
+# ======================
+
+# TEST OUTPUT
+
+# ======================
+
+coverage/
+jacoco/
+surefire-reports/
+failsafe-reports/
+
+# ======================
+
+# SECURITY SCANS
+
+# ======================
+
+dependency-check-report.*

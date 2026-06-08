@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+//No annotation needed — dependency on classpath auto-activates it in Spring Boot 3
 @SpringBootApplication
 @EnableScheduling
 public class SpringbootSecurityJwtRbacApp1Application {
