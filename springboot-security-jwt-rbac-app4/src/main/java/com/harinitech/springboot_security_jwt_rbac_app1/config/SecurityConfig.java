@@ -106,7 +106,8 @@ public class SecurityConfig {
 
 						// ✅ Truly public endpoints — no token required
 						.requestMatchers(PUBLIC_AUTH_MATCHERS).permitAll().requestMatchers(PUBLIC_USER_MATCHERS)
-						.permitAll().requestMatchers(SWAGGER_MATCHERS).permitAll()
+						.permitAll().requestMatchers(SWAGGER_MATCHERS).permitAll().requestMatchers("/actuator/**")
+						.permitAll()
 
 						// ✅ Preflight OPTIONS requests — always allow (for CORS)
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
