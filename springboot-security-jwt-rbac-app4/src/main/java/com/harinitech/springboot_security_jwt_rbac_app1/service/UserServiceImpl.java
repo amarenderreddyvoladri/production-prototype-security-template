@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationClient;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
@@ -65,7 +66,7 @@ public class UserServiceImpl implements IUserService {
 	private PasswordResetTokenRepository passwordResetTokenRepository;
 
 	@Autowired
-	private EmailService emailService;
+	private NotificationClient notificationClient;
 
 	@Autowired
 	private PasswordEncoder passwordEncoder;
@@ -125,7 +126,8 @@ public class UserServiceImpl implements IUserService {
 
 		redisOtpService.saveOtp(redisOtp);
 
-		emailService.sendOtp(normalizedEmail, otp);
+//		emailService.sendOtp(normalizedEmail, otp);
+		notificationClient.sendNotification(normalizedEmail, "Registration OTP", otp, "OTP");
 
 		log.info("OTP SENT | email={} | purpose=REGISTER", normalizedEmail);
 
@@ -269,7 +271,8 @@ public class UserServiceImpl implements IUserService {
 
 		redisOtpService.saveOtp(redisOtp);
 
-		emailService.sendOtp(user.getUsername(), otp);
+//		emailService.sendOtp(user.getUsername(), otp);
+		notificationClient.sendNotification(user.getUsername(), "Password Reset OTP", otp, "OTP");
 
 		log.info("RESET OTP REQUEST | email={} | userExists={}", username, user != null);
 
@@ -408,7 +411,11 @@ public class UserServiceImpl implements IUserService {
 	private void notifyAdminsOfNewRegistration(User pendingUser) {
 		List<User> admins = userRepository.findAll().stream()
 				.filter(u -> u.getRole() != null && "ADMIN".equals(u.getRole().getName())).toList();
-		admins.forEach(admin -> emailService.sendPendingApprovalNotification(admin.getUsername(), pendingUser));
+		admins.forEach(
+				admin -> notificationClient.sendNotification(
+						admin.getUsername(), "New Employee Registration Pending Approval", "Employee Email: "
+								+ pendingUser.getUsername() + ", Requested Role: " + pendingUser.getRequestedRole(),
+						"PENDING_APPROVAL"));
 	}
 
 	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================

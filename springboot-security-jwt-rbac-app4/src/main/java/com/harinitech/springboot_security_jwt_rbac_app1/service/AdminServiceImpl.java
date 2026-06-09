@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationClient;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
@@ -57,7 +58,7 @@ public class AdminServiceImpl implements IAdminService {
 	private AuditService auditService;
 
 	@Autowired
-	private EmailService emailService;
+	private NotificationClient notificationClient;
 
 	// ======================== 📋 READ ========================
 
@@ -312,7 +313,9 @@ public class AdminServiceImpl implements IAdminService {
 		pendingUser.setRequestedRole(null);
 		userRepository.save(pendingUser);
 
-		emailService.sendApprovalConfirmation(pendingUser.getUsername(), finalRole);
+//		emailService.sendApprovalConfirmation(pendingUser.getUsername(), finalRole);
+		notificationClient.sendNotification(pendingUser.getUsername(), "Account Approved",
+				"Your account has been approved. Assigned Role: " + finalRole, "APPROVAL");
 
 		log.info("REGISTRATION APPROVED | adminId={} | userId={} | finalRole={}", admin.getId(), userId, finalRole);
 		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
@@ -342,7 +345,8 @@ public class AdminServiceImpl implements IAdminService {
 		pendingUser.setRequestedRole(null);
 		userRepository.save(pendingUser);
 
-		emailService.sendRejectionNotice(pendingUser.getUsername(), reason);
+//		emailService.sendRejectionNotice(pendingUser.getUsername(), reason);
+		notificationClient.sendNotification(pendingUser.getUsername(), "Registration Rejected", reason, "REJECTION");
 
 		log.info("REGISTRATION REJECTED | adminId={} | userId={} | reason={}", admin.getId(), userId, reason);
 		auditService.log(AuditAction.REGISTRATION_REJECTED, AuditStatus.SUCCESS,
