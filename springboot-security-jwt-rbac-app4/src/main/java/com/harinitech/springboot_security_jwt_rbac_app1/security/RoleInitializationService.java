@@ -52,7 +52,7 @@ public class RoleInitializationService implements CommandLineRunner {
 				// 🛡️ ROLE & RBAC MANAGEMENT
 				// =========================================================================
 
-				"ASSIGN_ADMIN", "ASSIGN_MANAGER", "ASSIGN_HR", "ASSIGN_VENDOR",
+				"ASSIGN_ADMIN", "ASSIGN_MANAGER", "ASSIGN_HR", "ASSIGN_VENDOR", "ASSIGN_USER",
 
 				// =========================================================================
 				// 📊 AUDIT & SECURITY MONITORING
@@ -107,6 +107,8 @@ public class RoleInitializationService implements CommandLineRunner {
 		Permission assignManager = get("ASSIGN_MANAGER");
 		Permission assignHR = get("ASSIGN_HR");
 		Permission assignVendor = get("ASSIGN_VENDOR");
+		Permission assignUser = get("ASSIGN_USER");
+
 
 		Permission viewAuditLogs = get("VIEW_AUDIT_LOGS");
 		Permission viewSecurityEvents = get("VIEW_SECURITY_EVENTS");
@@ -123,7 +125,7 @@ public class RoleInitializationService implements CommandLineRunner {
 		// 🔴 ADMIN — full access to everything
 		createOrUpdateRole("ADMIN",
 				Set.of(readUser, createUser, updateUser, deleteUser, updateUserStatus, toggleUserAccess, forceLogout,
-						assignAdmin, assignManager, assignHR, assignVendor, helloUsers, viewUsers, viewAuditLogs,
+						assignAdmin, assignManager, assignHR, assignVendor,assignUser, helloUsers, viewUsers, viewAuditLogs,
 						viewSecurityEvents, viewAuditDashboard, systemAdmin, viewSecurityStatistics,
 						viewSystemStatistics, accountLock, accountUnlock, revokeToken, sessionRevoke));
 
