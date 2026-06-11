@@ -10,22 +10,22 @@ import lombok.Data;
 @Data
 public class SendNotificationRequest {
 
-	@Email
-	@NotBlank
-	private String recipient;
+    @Email
+    @NotBlank
+    private String recipient;
 
-	@NotNull
-	private NotificationType type;
+    @NotNull
+    private NotificationType type;
 
-	private String otp;
+    private String otp;
 
-	private String role;
+    private String role;
 
-	private String reason;
+    private String requestedRole;
 
-	private String requestedRole;
+    private String employeeEmail;
 
-	private String employeeEmail;
+    private String reason;
 
-	private String status;
+    private String status;
 }

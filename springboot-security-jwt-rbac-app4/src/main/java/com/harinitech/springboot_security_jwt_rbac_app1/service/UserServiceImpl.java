@@ -13,7 +13,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationClient;
+import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationFacade;
+import com.harinitech.springboot_security_jwt_rbac_app1.dto.NotificationType;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
@@ -65,8 +66,10 @@ public class UserServiceImpl implements IUserService {
 	@Autowired
 	private PasswordResetTokenRepository passwordResetTokenRepository;
 
+	// ✅ FIXED: inject NotificationFacade, NOT NotificationClient directly.
+//  NotificationFacade provides typed overloads and fire-and-tolerate handling.
 	@Autowired
-	private NotificationClient notificationClient;
+	private NotificationFacade notificationFacade;
 
 	@Autowired
 	private PasswordEncoder passwordEncoder;
@@ -126,8 +129,8 @@ public class UserServiceImpl implements IUserService {
 
 		redisOtpService.saveOtp(redisOtp);
 
-//		emailService.sendOtp(normalizedEmail, otp);
-		notificationClient.sendNotification(normalizedEmail, "Registration OTP", otp, "OTP");
+		// ✅ FIXED: use NotificationFacade with proper NotificationType enum
+		notificationFacade.sendNotification(normalizedEmail, NotificationType.REGISTRATION_OTP, otp);
 
 		log.info("OTP SENT | email={} | purpose=REGISTER", normalizedEmail);
 
@@ -238,9 +241,8 @@ public class UserServiceImpl implements IUserService {
 
 		auditService.log(AuditAction.PASSWORD_CHANGED, AuditStatus.SUCCESS, "Password changed successfully", null);
 
-		// ========================
-		// RESPONSE
-		// ========================
+		// ✅ FIXED: notify user via NotificationFacade with proper NotificationType
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.PASSWORD_CHANGED);
 
 		return ResponseEntity
 				.ok(Map.of("message", "Password changed successfully. Please login again.", "userId", user.getId()));
@@ -271,10 +273,10 @@ public class UserServiceImpl implements IUserService {
 
 		redisOtpService.saveOtp(redisOtp);
 
-//		emailService.sendOtp(user.getUsername(), otp);
-		notificationClient.sendNotification(user.getUsername(), "Password Reset OTP", otp, "OTP");
+		// ✅ FIXED: use NotificationFacade with proper NotificationType enum
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.PASSWORD_RESET_OTP, otp);
 
-		log.info("RESET OTP REQUEST | email={} | userExists={}", username, user != null);
+		log.info("RESET OTP REQUEST | email={} | userExists=true", username);
 
 		auditService.log(AuditAction.PASSWORD_RESET_REQUEST, AuditStatus.SUCCESS, "Password reset OTP requested", null);
 
@@ -303,6 +305,9 @@ public class UserServiceImpl implements IUserService {
 		log.info("PASSWORD RESET SUCCESS | userId={}", user.getId());
 
 		auditService.log(AuditAction.PASSWORD_RESET, AuditStatus.SUCCESS, "Password reset successfully", null);
+
+		// ✅ FIXED: notify user of successful password reset
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.PASSWORD_RESET_COMPLETED);
 
 		return ResponseEntity.ok(Map.of("message", "Password reset successfully", "userId", user.getId()));
 	}
@@ -384,6 +389,7 @@ public class UserServiceImpl implements IUserService {
 		// 4. Create user in PENDING state (minimal role = USER while pending)
 		Role placeholderRole = getRole("USER");
 		User user = new User();
+
 		user.setUsername(email);
 		user.setPassword(passwordEncoder.encode(request.getPassword()));
 		user.setRole(placeholderRole);
@@ -394,12 +400,17 @@ public class UserServiceImpl implements IUserService {
 		user.setFailedLoginAttempts(0);
 		user.setPasswordChangedAt(Instant.now());
 		user.setRequestedRole(requestedRole);
+
 		userRepository.save(user);
 
-		// 5. Notify all ADMINs about new pending registration
+		// 5. Notify the employee that registration was submitted
+		notificationFacade.sendNotification(email, NotificationType.EMPLOYEE_REGISTRATION_SUBMITTED);
+
+		// 6. Notify all ADMINs about new pending registration
 		notifyAdminsOfNewRegistration(user);
 
 		log.info("EMPLOYEE REGISTRATION SUBMITTED | email={} | requestedRole={}", email, requestedRole);
+
 		auditService.log(AuditAction.REGISTER, AuditStatus.SUCCESS,
 				"Employee registration submitted for role " + requestedRole, null);
 
@@ -409,13 +420,15 @@ public class UserServiceImpl implements IUserService {
 
 	// Helper: notify all users with ADMIN role
 	private void notifyAdminsOfNewRegistration(User pendingUser) {
+
 		List<User> admins = userRepository.findAll().stream()
 				.filter(u -> u.getRole() != null && "ADMIN".equals(u.getRole().getName())).toList();
-		admins.forEach(
-				admin -> notificationClient.sendNotification(
-						admin.getUsername(), "New Employee Registration Pending Approval", "Employee Email: "
-								+ pendingUser.getUsername() + ", Requested Role: " + pendingUser.getRequestedRole(),
-						"PENDING_APPROVAL"));
+
+		// ✅ FIXED: use NotificationFacade.sendPendingApprovalAlertToAdmin()
+//	    with employeeEmail and requestedRole context fields
+		admins.forEach(admin -> notificationFacade.sendPendingApprovalAlertToAdmin(admin.getUsername(),
+				pendingUser.getUsername(), pendingUser.getRequestedRole()));
+
 	}
 
 	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================

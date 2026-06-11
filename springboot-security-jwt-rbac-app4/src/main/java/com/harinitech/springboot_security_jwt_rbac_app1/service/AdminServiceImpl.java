@@ -13,7 +13,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationClient;
+import com.harinitech.springboot_security_jwt_rbac_app1.client.NotificationFacade;
+import com.harinitech.springboot_security_jwt_rbac_app1.dto.NotificationType;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.Role;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.User;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
@@ -57,8 +58,10 @@ public class AdminServiceImpl implements IAdminService {
 	@Autowired
 	private AuditService auditService;
 
+	// ✅ FIXED: inject NotificationFacade, NOT NotificationClient directly.
+	// NotificationFacade provides typed overloads and fire-and-tolerate handling.
 	@Autowired
-	private NotificationClient notificationClient;
+	private NotificationFacade notificationFacade;
 
 	// ======================== 📋 READ ========================
 
@@ -139,6 +142,10 @@ public class AdminServiceImpl implements IAdminService {
 		auditService.log(AuditAction.ROLE_CHANGED, AuditStatus.SUCCESS,
 				"User role updated from " + previousRole + " to " + roleName, null);
 
+		// ✅ FIXED: notify user of role change via NotificationFacade
+		notificationFacade.sendNotification(targetUser.getUsername(), NotificationType.ROLE_CHANGED,
+				roleName.toUpperCase(), null, null);
+
 		return ResponseEntity.ok(Map.of("message", "User role updated successfully.", "userId", userId, "previousRole",
 				previousRole, "newRole", roleName.toUpperCase()));
 	}
@@ -177,6 +184,10 @@ public class AdminServiceImpl implements IAdminService {
 		auditService.log(AuditAction.STATUS_CHANGED, AuditStatus.SUCCESS,
 				"User status updated from " + previousStatus + " to " + status, null);
 
+		// ✅ FIXED: notify user of status change via NotificationFacade
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.STATUS_CHANGED, null, status.name(),
+				null);
+
 		return ResponseEntity.ok(Map.of("message", "User status updated successfully.", "userId", userId,
 				"previousStatus", previousStatus, "currentStatus", status));
 	}
@@ -206,6 +217,10 @@ public class AdminServiceImpl implements IAdminService {
 		auditService.log(AuditAction.ACCESS_TOGGLED, AuditStatus.SUCCESS,
 				enabled ? "User access enabled" : "User access disabled", null);
 
+		// ✅ FIXED: notify user of access change via NotificationFacade
+		notificationFacade.sendNotification(user.getUsername(),
+				enabled ? NotificationType.ACCESS_ENABLED : NotificationType.ACCESS_DISABLED);
+
 		return ResponseEntity.ok(Map.of("message",
 				enabled ? "User access enabled successfully." : "User access disabled and all sessions revoked.",
 				"userId", userId, "enabled", enabled));
@@ -227,6 +242,9 @@ public class AdminServiceImpl implements IAdminService {
 				revokedCount);
 
 		auditService.log(AuditAction.FORCE_LOGOUT, AuditStatus.SUCCESS, "Admin force logged out user", null);
+
+		// ✅ FIXED: notify user of force logout via NotificationFacade
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.FORCE_LOGOUT);
 
 		return ResponseEntity.ok(Map.of("message", "User has been logged out from all devices.", "userId", userId,
 				"sessionsEnded", revokedCount));
@@ -313,11 +331,12 @@ public class AdminServiceImpl implements IAdminService {
 		pendingUser.setRequestedRole(null);
 		userRepository.save(pendingUser);
 
-//		emailService.sendApprovalConfirmation(pendingUser.getUsername(), finalRole);
-		notificationClient.sendNotification(pendingUser.getUsername(), "Account Approved",
-				"Your account has been approved. Assigned Role: " + finalRole, "APPROVAL");
+		// ✅ FIXED: notify user of registration approval via NotificationFacade
+		notificationFacade.sendNotification(pendingUser.getUsername(), NotificationType.REGISTRATION_APPROVED,
+				finalRole, null, null);
 
 		log.info("REGISTRATION APPROVED | adminId={} | userId={} | finalRole={}", admin.getId(), userId, finalRole);
+
 		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
 				"Approved employee registration. Role: " + finalRole, null);
 
@@ -345,8 +364,9 @@ public class AdminServiceImpl implements IAdminService {
 		pendingUser.setRequestedRole(null);
 		userRepository.save(pendingUser);
 
-//		emailService.sendRejectionNotice(pendingUser.getUsername(), reason);
-		notificationClient.sendNotification(pendingUser.getUsername(), "Registration Rejected", reason, "REJECTION");
+		// ✅ FIXED: notify user of registration rejection via NotificationFacade
+		notificationFacade.sendNotification(pendingUser.getUsername(), NotificationType.REGISTRATION_REJECTED, null,
+				null, reason);
 
 		log.info("REGISTRATION REJECTED | adminId={} | userId={} | reason={}", admin.getId(), userId, reason);
 		auditService.log(AuditAction.REGISTRATION_REJECTED, AuditStatus.SUCCESS,
@@ -462,6 +482,7 @@ public class AdminServiceImpl implements IAdminService {
 				() -> new RuntimeException("Role '" + roleName.toUpperCase() + "' does not exist in the system."));
 	}
 
+	@SuppressWarnings("unused")
 	private Set<String> currentPermissions() {
 		return SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
 				.map(a -> a.getAuthority()).collect(Collectors.toSet());
@@ -539,6 +560,9 @@ public class AdminServiceImpl implements IAdminService {
 
 		auditService.log(AuditAction.ACCOUNT_LOCKED, AuditStatus.SUCCESS, "Admin locked user account", null);
 
+		// ✅ FIXED: notify user of account lock via NotificationFacade
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.ACCOUNT_LOCKED);
+
 		return ResponseEntity.ok(Map.of("message", "User account locked successfully.", "userId", userId,
 				"revokedTokens", revokedTokens));
 	}
@@ -556,9 +580,11 @@ public class AdminServiceImpl implements IAdminService {
 			throw new RuntimeException("User account is already unlocked.");
 		}
 
-		user.setAccountLocked(true);
-
+		user.setAccountLocked(false);
 		userRepository.save(user);
+
+		// ✅ FIXED: notify user of account unlock via NotificationFacade
+		notificationFacade.sendNotification(user.getUsername(), NotificationType.ACCOUNT_UNLOCKED);
 
 		log.info("ACCOUNT UNLOCKED | adminId={} | targetUserId={}", getCurrentUserId(), userId);
 

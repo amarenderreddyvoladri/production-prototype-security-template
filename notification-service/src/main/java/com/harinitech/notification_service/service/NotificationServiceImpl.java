@@ -34,8 +34,10 @@ public class NotificationServiceImpl implements NotificationService {
 
 	private final NotificationTemplateService templateService;
 
+	private static final String NOTIFICATION_NOT_FOUND = "Notification not found with id: ";
+
 	@Override
-	@Transactional
+	@Transactional(rollbackOn = Exception.class)
 	public NotificationResponse sendNotification(SendNotificationRequest request) {
 
 		log.info("Processing notification | recipient={} | type={}", request.getRecipient(), request.getType());
@@ -77,7 +79,7 @@ public class NotificationServiceImpl implements NotificationService {
 	public NotificationDto getNotification(Long id) {
 
 		Notification notification = repository.findById(id)
-				.orElseThrow(() -> new EntityNotFoundException("Notification not found with id: " + id));
+				.orElseThrow(() -> new EntityNotFoundException(NOTIFICATION_NOT_FOUND + id));
 
 		return mapper.toDto(notification);
 	}
@@ -97,22 +99,23 @@ public class NotificationServiceImpl implements NotificationService {
 	@Override
 	public NotificationStatisticsDto getStatistics() {
 
-		long totalNotifications = repository.count();
+		log.debug("Notification statistics requested");
 
-		long sentNotifications = repository.countByStatus(NotificationStatus.SENT);
-
-		long failedNotifications = repository.countByStatus(NotificationStatus.FAILED);
-
-		long pendingNotifications = repository.countByStatus(NotificationStatus.PENDING);
-
-		return NotificationStatisticsDto.builder().totalNotifications(totalNotifications)
-				.sentNotifications(sentNotifications).failedNotifications(failedNotifications)
-				.pendingNotifications(pendingNotifications).build();
+		return NotificationStatisticsDto.builder().totalNotifications(repository.count())
+				.sentNotifications(repository.countByStatus(NotificationStatus.SENT))
+				.failedNotifications(repository.countByStatus(NotificationStatus.FAILED))
+				.pendingNotifications(repository.countByStatus(NotificationStatus.PENDING)).build();
 	}
 
 	private String buildResponseMessage(Notification notification) {
 
-		return notification.getStatus() == NotificationStatus.SENT ? "Notification sent successfully"
-				: "Notification delivery failed";
+		return switch (notification.getStatus()) {
+
+		case SENT -> "Notification sent successfully";
+
+		case FAILED -> "Notification delivery failed";
+
+		case PENDING -> "Notification is pending delivery";
+		};
 	}
 }
