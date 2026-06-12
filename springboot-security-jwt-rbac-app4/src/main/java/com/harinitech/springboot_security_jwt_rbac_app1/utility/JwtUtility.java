@@ -16,6 +16,9 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * ✅ PRODUCTION FIX — userId-based JWT design.
  *
@@ -36,6 +39,7 @@ import io.jsonwebtoken.security.Keys;
  * JwtFilter reads sub → parses as Long → sets as principal in SecurityContext.
  * All services call getCurrentUserId() → Long.parseLong(principal.toString()).
  */
+@Slf4j
 @Component
 public class JwtUtility {
 
@@ -43,12 +47,44 @@ public class JwtUtility {
 	private final long accessTokenExpirationMs;
 	private final long refreshTokenExpirationMs;
 
+	// ✅ FIXED: JWT secret validation constants
+	private static final int MIN_SECRET_LENGTH = 32; // 256 bits minimum for HS256
+
 	public JwtUtility(@Value("${jwt.secret}") String secret,
 			@Value("${jwt.access-token-expiration-ms}") long accessTokenExpirationMs,
 			@Value("${jwt.refresh-token-expiration-ms}") long refreshTokenExpirationMs) {
+		
+		// ✅ FIXED: Validate JWT secret at construction time
+		validateJwtSecret(secret);
+		
 		this.key = Keys.hmacShaKeyFor(secret.getBytes());
 		this.accessTokenExpirationMs = accessTokenExpirationMs;
 		this.refreshTokenExpirationMs = refreshTokenExpirationMs;
+	}
+
+	/**
+	 * ✅ FIXED: Validate JWT secret meets security requirements
+	 * Prevents weak secrets that could be compromised
+	 */
+	private void validateJwtSecret(String secret) {
+		if (secret == null || secret.isBlank()) {
+			throw new IllegalArgumentException("JWT secret cannot be null or blank. Set JWT_SECRET environment variable.");
+		}
+		
+		if (secret.length() < MIN_SECRET_LENGTH) {
+			throw new IllegalArgumentException(
+				String.format("JWT secret must be at least %d characters (256 bits) for HS256 algorithm. Current length: %d", 
+				MIN_SECRET_LENGTH, secret.length()));
+		}
+		
+		// Check for common weak secrets
+		String lowerSecret = secret.toLowerCase();
+		if (lowerSecret.equals("secret") || lowerSecret.equals("password") || 
+			lowerSecret.equals("jwtsecret") || lowerSecret.equals("changeme")) {
+			throw new IllegalArgumentException("JWT secret cannot be a common weak value. Use a strong, randomly generated secret.");
+		}
+		
+		log.info("JWT secret validated successfully (length: {} chars)", secret.length());
 	}
 
 	// ===================== TOKEN GENERATION =====================

@@ -2,6 +2,7 @@ package com.harinitech.springboot_security_jwt_rbac_app1.security;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.annotation.Order;
@@ -15,7 +16,9 @@ import com.harinitech.springboot_security_jwt_rbac_app1.repo.RoleRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @Order(2)
 @ConditionalOnProperty(name = "app.init.users", havingValue = "true")
@@ -26,10 +29,13 @@ public class UserDataInitializer implements CommandLineRunner {
 	private final RoleRepository roleRepository;
 	private final PasswordEncoder passwordEncoder;
 
+	@Value("${app.init.default-password:ChangeMe@123!}")
+	private String defaultPassword;
+
 	@Override
 	public void run(String... args) {
 
-		System.out.println("🚀 Running UserDataInitializer...");
+		log.info("🚀 Running UserDataInitializer...");
 
 		createUsersForRole("ADMIN", List.of("admin1@test.com", "admin2@test.com", "admin3@test.com"));
 
@@ -55,12 +61,13 @@ public class UserDataInitializer implements CommandLineRunner {
 
 				User user = new User();
 				user.setUsername(email);
-				user.setPassword(passwordEncoder.encode("Password@123"));
+				// ✅ FIXED: Use configurable default password from application.properties
+				user.setPassword(passwordEncoder.encode(defaultPassword));
 				user.setRole(role);
 				user.setStatus(Status.ACTIVE);
 				user.setEnabled(true);
 
-				System.out.println("✅ Created " + roleName + " user: " + email);
+				log.info("✅ Created {} user: {}", roleName, email);
 
 				return userRepository.save(user);
 			});

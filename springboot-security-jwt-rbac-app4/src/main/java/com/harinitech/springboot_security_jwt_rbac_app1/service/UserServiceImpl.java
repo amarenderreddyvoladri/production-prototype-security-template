@@ -380,7 +380,7 @@ public class UserServiceImpl implements IUserService {
 		}
 
 		// 3. Whitelist allowed employee roles
-		Set<String> allowedRoles = Set.of("EMPLOYEE", "MANAGER", "VENDOR", "HR", "FINANCE", "SUPPORT");
+		Set<String> allowedRoles = Set.of("EMPLOYEE", "HR", "VENDOR", "SUPPORT", "MANAGER");
 		String requestedRole = request.getRequestedRole().toUpperCase();
 		if (!allowedRoles.contains(requestedRole)) {
 			throw new RuntimeException("Invalid role requested. Allowed: " + allowedRoles);
@@ -407,7 +407,7 @@ public class UserServiceImpl implements IUserService {
 		notificationFacade.sendNotification(email, NotificationType.EMPLOYEE_REGISTRATION_SUBMITTED);
 
 		// 6. Notify all ADMINs about new pending registration
-		notifyAdminsOfNewRegistration(user);
+		notifyApproversOfNewRegistration(user);
 
 		log.info("EMPLOYEE REGISTRATION SUBMITTED | email={} | requestedRole={}", email, requestedRole);
 
@@ -434,6 +434,19 @@ public class UserServiceImpl implements IUserService {
 	// ======================== 🧑‍💼 EMPLOYEE REGISTRATION ========================
 
 	// ======================== 🧰 PRIVATE HELPERS ========================
+
+	private void notifyApproversOfNewRegistration(User pendingUser) {
+
+		String approverRole = "MANAGER".equalsIgnoreCase(pendingUser.getRequestedRole()) ? "ADMIN" : "MANAGER";
+
+		List<User> approvers = userRepository.findAll().stream()
+				.filter(user -> user.getRole() != null && approverRole.equalsIgnoreCase(user.getRole().getName()))
+				.filter(User::isEnabled).filter(user -> user.getStatus() == Status.ACTIVE).toList();
+
+		approvers.forEach(approver -> notificationFacade.sendPendingApprovalAlertToAdmin(approver.getUsername(),
+				pendingUser.getUsername(), pendingUser.getRequestedRole()));
+
+	}
 
 	private void validateOtp(String email, String otpInput) {
 

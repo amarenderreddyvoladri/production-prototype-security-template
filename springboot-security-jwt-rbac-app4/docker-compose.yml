@@ -2,21 +2,15 @@ services:
 
   mysql:
     image: mysql:8.4
-
     container_name: security-mysql
-
     restart: unless-stopped
-
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: jwt_security
-
     ports:
       - "3307:3306"
-
     volumes:
       - mysql_data:/var/lib/mysql
-
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${DB_PASSWORD}"]
       interval: 10s
@@ -26,56 +20,70 @@ services:
 
   redis:
     image: redis:7-alpine
-
     container_name: security-redis
-
     restart: unless-stopped
-
     ports:
       - "6379:6379"
-
     volumes:
       - redis_data:/data
-
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  app:
-    image: security-app:latest
-
+  notification-service:
     build:
-      context: .
-
-    container_name: security-app
-
+      context: ../notification-service
+    container_name: security-notification
     restart: unless-stopped
-
     depends_on:
       mysql:
         condition: service_healthy
+    ports:
+      - "8182:8182"
+    environment:
+      DB_DOCKER_URL: jdbc:mysql://mysql:3306/jwt_security?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_SENDER_MAIL: ${SENDGRID_SENDER_MAIL}
+      SENDGRID_SENDER_NAME: ${SENDGRID_SENDER_NAME}
+      NOTIFICATION_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8182/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
 
+  app:
+    image: security-app:latest
+    build:
+      context: .
+    container_name: security-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
       redis:
         condition: service_healthy
-
+      notification-service:
+        condition: service_healthy
     ports:
       - "8181:8181"
-
     environment:
       DB_DOCKER_URL: ${DB_DOCKER_URL}
       DB_USERNAME: ${DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD}
-
       JWT_SECRET: ${JWT_SECRET}
-
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
       SENDGRID_SENDER_MAIL: ${SENDGRID_SENDER_MAIL}
       SENDGRID_SENDER_NAME: ${SENDGRID_SENDER_NAME}
-
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      NOTIFICATION_SERVICE_URL: http://notification-service:8182
+      NOTIFICATION_SERVICE_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
 
 volumes:
   mysql_data:

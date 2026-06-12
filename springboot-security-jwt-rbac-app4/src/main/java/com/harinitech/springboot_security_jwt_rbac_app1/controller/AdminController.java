@@ -205,7 +205,7 @@ public class AdminController {
 	}
 
 	@GetMapping("/pending-registrations")
-	@PreAuthorize("hasAuthority('VIEW_USERS')")
+	@PreAuthorize("hasAuthority('VIEW_PENDING_REGISTRATIONS')")
 	public ResponseEntity<ApiResponse<?>> getPendingRegistrations(Pageable pageable) {
 
 		log.info("ADMIN API | FETCH PENDING REGISTRATIONS | page={} | size={} | sort={}", pageable.getPageNumber(),
@@ -216,15 +216,15 @@ public class AdminController {
 	}
 
 	@PostMapping("/registrations/{id}/approve")
-	@PreAuthorize("hasAuthority('ASSIGN_EMPLOYEE') or hasAuthority('ASSIGN_MANAGER')") // adjust as needed
-	public ResponseEntity<ApiResponse<?>> approveRegistration(@PathVariable Long id, @RequestParam String role) {
-		log.warn("ADMIN API | APPROVE REGISTRATION | userId={} | role={}", id, role);
+	@PreAuthorize("hasAuthority('APPROVE_REGISTRATION')")
+	public ResponseEntity<ApiResponse<?>> approveRegistration(@PathVariable Long id) {
+		log.warn("ADMIN API | APPROVE REGISTRATION | userId={}", id);
 		return ResponseEntity
-				.ok(ApiResponse.success("Registration approved", adminService.approveRegistration(id, role).getBody()));
+				.ok(ApiResponse.success("Registration approved", adminService.approveRegistration(id).getBody()));
 	}
 
 	@PostMapping("/registrations/{id}/reject")
-	@PreAuthorize("hasAuthority('UPDATE_USER_STATUS')")
+	@PreAuthorize("hasAuthority('REJECT_REGISTRATION')")
 	public ResponseEntity<ApiResponse<?>> rejectRegistration(@PathVariable Long id,
 			@RequestParam(defaultValue = "Rejected by administrator") String reason) {
 		log.warn("ADMIN API | REJECT REGISTRATION | userId={} | reason={}", id, reason);

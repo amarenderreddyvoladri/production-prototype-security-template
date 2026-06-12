@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +25,7 @@ import com.harinitech.springboot_security_jwt_rbac_app1.repo.RoleRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserRepository;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -41,27 +41,24 @@ import lombok.extern.slf4j.Slf4j;
 
 @Transactional
 @Slf4j
+@RequiredArgsConstructor
 @Service
 public class AdminServiceImpl implements IAdminService {
 
 	// ======================== DEPENDENCIES ========================
 
-	@Autowired
-	private UserRepository userRepository;
+	private final UserRepository userRepository;
 
-	@Autowired
-	private RoleRepository roleRepository;
+	private final RoleRepository roleRepository;
 
-	@Autowired
-	private UserTokenRepository userTokenRepository;
+	private final UserTokenRepository userTokenRepository;
 
-	@Autowired
-	private AuditService auditService;
+	private final AuditService auditService;
 
 	// ✅ FIXED: inject NotificationFacade, NOT NotificationClient directly.
 	// NotificationFacade provides typed overloads and fire-and-tolerate handling.
-	@Autowired
-	private NotificationFacade notificationFacade;
+
+	private final NotificationFacade notificationFacade;
 
 	// ======================== 📋 READ ========================
 
@@ -233,10 +230,10 @@ public class AdminServiceImpl implements IAdminService {
 
 		requirePermission("FORCE_LOGOUT");
 
+		guardSelf(userId, "force logout");
+
 		User user = getUserOrThrow(userId);
 		int revokedCount = revokeAllActiveTokens(user);
-
-		guardSelf(userId, "force logout");
 
 		log.info("Admin [userId={}] force-logged-out user [userId={}]. Tokens revoked: {}", getCurrentUserId(), userId,
 				revokedCount);
@@ -260,13 +257,17 @@ public class AdminServiceImpl implements IAdminService {
 	 * For production, externalise to application.yml
 	 * using @ConfigurationProperties.
 	 */
-	private static final Map<String, Set<String>> APPROVAL_HIERARCHY = Map.of("ADMIN",
-			Set.of("MANAGER", "EMPLOYEE", "VENDOR", "HR", "FINANCE", "SUPPORT"), "MANAGER",
-			Set.of("VENDOR", "HR", "EMPLOYEE", "SUPPORT"), "HR", Set.of("EMPLOYEE"));
+	private static final Map<String, Set<String>> APPROVAL_HIERARCHY = Map.of("ADMIN", Set.of("MANAGER"), "MANAGER",
+			Set.of("EMPLOYEE", "HR", "VENDOR", "SUPPORT"));
 
 	private boolean canApproveRole(String approverRole, String targetRole) {
 		Set<String> allowed = APPROVAL_HIERARCHY.get(approverRole.toUpperCase());
 		return allowed != null && allowed.contains(targetRole.toUpperCase());
+	}
+
+	private Set<String> approvableRolesForCurrentUser() {
+		User approver = getCurrentUser();
+		return APPROVAL_HIERARCHY.getOrDefault(approver.getRole().getName().toUpperCase(), Set.of());
 	}
 
 	// ======================== 📋 PENDING REGISTRATIONS ========================
@@ -274,9 +275,11 @@ public class AdminServiceImpl implements IAdminService {
 	@Override
 	public ResponseEntity<?> getPendingRegistrations(Pageable pageable) {
 
-		requirePermission("VIEW_USERS");
+		requirePermission("VIEW_PENDING_REGISTRATIONS");
 
-		Page<User> pendingPage = userRepository.findByStatus(Status.PENDING_APPROVAL, pageable);
+		Set<String> approvableRoles = approvableRolesForCurrentUser();
+		Page<User> pendingPage = approvableRoles.isEmpty() ? Page.empty(pageable)
+				: userRepository.findByStatusAndRequestedRoleIn(Status.PENDING_APPROVAL, approvableRoles, pageable);
 
 		Page<Map<String, Object>> responsePage = pendingPage
 				.map(user -> Map.<String, Object>of("userId", user.getId(), "email", user.getUsername(),
@@ -295,12 +298,61 @@ public class AdminServiceImpl implements IAdminService {
 
 	@Override
 	@Transactional
-	public ResponseEntity<?> approveRegistration(Long userId, String assignedRole) {
-		requirePermission("ASSIGN_" + assignedRole.toUpperCase());
+	public ResponseEntity<?> approveRegistration(Long userId) {
 
-		User admin = getCurrentUser();
-		String adminRole = admin.getRole().getName();
+		requirePermission("APPROVE_REGISTRATION");
 
+		User approver = getCurrentUser();
+		String approverRole = approver.getRole().getName();
+
+		User pendingUser = userRepository.findById(userId)
+				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
+
+		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
+			throw new RuntimeException("User is not in pending approval state.");
+		}
+
+		String rawRequestedRole = pendingUser.getRequestedRole();
+
+		if (rawRequestedRole == null || rawRequestedRole.isBlank()) {
+			throw new RuntimeException("No requested role found for this user.");
+		}
+
+		String requestedRole = rawRequestedRole.trim().toUpperCase();
+
+		if (!canApproveRole(approverRole, requestedRole)) {
+			throw new RuntimeException("You are not authorised to approve registrations for role: " + requestedRole);
+		}
+
+		Role role = roleRepository.findByName(requestedRole)
+				.orElseThrow(() -> new RuntimeException("Requested role does not exist: " + requestedRole));
+
+		pendingUser.setRole(role);
+		pendingUser.setStatus(Status.ACTIVE);
+		pendingUser.setEnabled(true);
+		pendingUser.setRequestedRole(null);
+
+		userRepository.save(pendingUser);
+
+		notificationFacade.sendNotification(pendingUser.getUsername(), NotificationType.REGISTRATION_APPROVED,
+				requestedRole, null, null);
+
+		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
+				"Registration approved by " + approverRole + ". Role: " + requestedRole, null);
+
+		return ResponseEntity.ok(Map.of("message", "User approved successfully.", "userId", userId, "approvedBy",
+				approver.getId(), "assignedRole", requestedRole));
+	}
+
+	// ======================== ❌ REJECT ========================
+
+	@Override
+	@Transactional
+	public ResponseEntity<?> rejectRegistration(Long userId, String reason) {
+		requirePermission("REJECT_REGISTRATION");
+
+		User approver = getCurrentUser();
+		String approverRole = approver.getRole().getName();
 		User pendingUser = userRepository.findById(userId)
 				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
 
@@ -309,54 +361,14 @@ public class AdminServiceImpl implements IAdminService {
 		}
 
 		String requestedRole = pendingUser.getRequestedRole();
-		if (requestedRole == null) {
+		if (requestedRole == null || requestedRole.isBlank()) {
 			throw new RuntimeException("No requested role found for this user.");
 		}
 
-		// Hierarchical check
-		if (!canApproveRole(adminRole, requestedRole)) {
-			log.warn("APPROVAL BLOCKED | adminId={} | adminRole={} | targetRole={}", admin.getId(), adminRole,
-					requestedRole);
-			throw new RuntimeException("You are not authorised to approve registrations for role: " + requestedRole);
-		}
+		requestedRole = requestedRole.trim().toUpperCase();
 
-		// Final role (could be same as requested, or admin can override)
-		String finalRole = assignedRole != null ? assignedRole.toUpperCase() : requestedRole;
-		Role role = roleRepository.findByName(finalRole)
-				.orElseThrow(() -> new RuntimeException("Role '" + finalRole + "' does not exist."));
-
-		pendingUser.setRole(role);
-		pendingUser.setStatus(Status.ACTIVE);
-		pendingUser.setEnabled(true);
-		pendingUser.setRequestedRole(null);
-		userRepository.save(pendingUser);
-
-		// ✅ FIXED: notify user of registration approval via NotificationFacade
-		notificationFacade.sendNotification(pendingUser.getUsername(), NotificationType.REGISTRATION_APPROVED,
-				finalRole, null, null);
-
-		log.info("REGISTRATION APPROVED | adminId={} | userId={} | finalRole={}", admin.getId(), userId, finalRole);
-
-		auditService.log(AuditAction.REGISTRATION_APPROVED, AuditStatus.SUCCESS,
-				"Approved employee registration. Role: " + finalRole, null);
-
-		return ResponseEntity
-				.ok(Map.of("message", "User approved successfully.", "userId", userId, "assignedRole", finalRole));
-	}
-
-	// ======================== ❌ REJECT ========================
-
-	@Override
-	@Transactional
-	public ResponseEntity<?> rejectRegistration(Long userId, String reason) {
-		requirePermission("UPDATE_USER_STATUS");
-
-		User admin = getCurrentUser();
-		User pendingUser = userRepository.findById(userId)
-				.orElseThrow(() -> new RuntimeException("User not found with ID: " + userId));
-
-		if (pendingUser.getStatus() != Status.PENDING_APPROVAL) {
-			throw new RuntimeException("User is not in pending approval state.");
+		if (!canApproveRole(approverRole, requestedRole)) {
+			throw new RuntimeException("You are not authorised to reject registrations for role: " + requestedRole);
 		}
 
 		pendingUser.setStatus(Status.INACTIVE);
@@ -368,9 +380,10 @@ public class AdminServiceImpl implements IAdminService {
 		notificationFacade.sendNotification(pendingUser.getUsername(), NotificationType.REGISTRATION_REJECTED, null,
 				null, reason);
 
-		log.info("REGISTRATION REJECTED | adminId={} | userId={} | reason={}", admin.getId(), userId, reason);
+		log.info("REGISTRATION REJECTED | approverId={} | approverRole={} | userId={} | requestedRole={} | reason={}",
+				approver.getId(), approverRole, userId, requestedRole, reason);
 		auditService.log(AuditAction.REGISTRATION_REJECTED, AuditStatus.SUCCESS,
-				"Rejected employee registration. Reason: " + reason, null);
+				"Rejected registration for role " + requestedRole + ". Reason: " + reason, null);
 
 		return ResponseEntity.ok(Map.of("message", "User registration rejected.", "userId", userId, "reason", reason));
 	}
@@ -668,10 +681,10 @@ public class AdminServiceImpl implements IAdminService {
 
 		long totalUsers = userRepository.count();
 
-		long totalAdmins = userRepository.findAll().stream().filter(user -> user.getRole() != null)
-				.filter(user -> user.getRole().getName().equalsIgnoreCase("ADMIN")).count();
+		// ✅ FIXED: Optimized N+1 query by using single query with projection
+		long totalAdmins = userRepository.countByRoleNameIgnoreCase("ADMIN");
 
-		long activeUsers = userRepository.findAll().stream().filter(User::isEnabled).count();
+		long activeUsers = userRepository.countByEnabledTrue();
 
 		return ResponseEntity
 				.ok(Map.of("totalUsers", totalUsers, "totalAdmins", totalAdmins, "activeUsers", activeUsers));
@@ -682,11 +695,12 @@ public class AdminServiceImpl implements IAdminService {
 
 		requirePermission("VIEW_SECURITY_STATISTICS");
 
-		long revokedTokens = userTokenRepository.findAll().stream().filter(UserToken::isRevoked).count();
+		// ✅ FIXED: Optimized N+1 query by using repository count methods
+		long revokedTokens = userTokenRepository.countByRevokedTrue();
 
-		long activeTokens = userTokenRepository.findAll().stream().filter(token -> !token.isRevoked()).count();
+		long activeTokens = userTokenRepository.countByRevokedFalse();
 
-		long lockedAccounts = userRepository.findAll().stream().filter(user -> !user.isAccountNonLocked()).count();
+		long lockedAccounts = userRepository.countByAccountLockedTrue();
 
 		return ResponseEntity.ok(
 				Map.of("activeTokens", activeTokens, "revokedTokens", revokedTokens, "lockedAccounts", lockedAccounts));

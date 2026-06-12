@@ -1,5 +1,8 @@
 package com.harinitech.springboot_security_jwt_rbac_app1.config;
 
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
@@ -23,8 +26,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.harinitech.springboot_security_jwt_rbac_app1.filter.JwtFilter;
 import com.harinitech.springboot_security_jwt_rbac_app1.service.IAuthService;
-
-import java.util.List;
 
 @Configuration
 @EnableMethodSecurity // enables @PreAuthorize / @PostAuthorize on methods
@@ -61,9 +62,12 @@ public class SecurityConfig {
 	/**
 	 * User endpoints that require NO token (self-service flows before login).
 	 */
-	private static final String[] PUBLIC_USER_MATCHERS = { "/api/v1/users", "/api/v1/users/send-registration-otp",
-			"/api/v1/users/register", "/api/v1/users/forgot-password", "/api/v1/users/reset-password",
-			"/api/v1/users/system/cache/clear" };
+	/**
+	 * User endpoints that require NO token (self-service flows before login).
+	 */
+	private static final String[] PUBLIC_USER_MATCHERS = { "/api/v1/users/send-registration-otp",
+			"/api/v1/users/register", "/api/v1/users/employee-register", "/api/v1/users/forgot-password",
+			"/api/v1/users/reset-password" };
 
 	/**
 	 * Swagger / OpenAPI UI endpoints.
@@ -73,9 +77,10 @@ public class SecurityConfig {
 
 	// ── CORS ALLOWED ORIGINS (update per environment) ─────────────────────────
 
-	private static final List<String> CORS_ALLOWED_ORIGINS = List.of("http://localhost:4200", // Angular dev
-			"http://localhost:3000" // React dev — add prod URL here
-	);
+	// ✅ FIXED: Made CORS origins configurable via application.properties
+	// Fallback to localhost for development, should be overridden in production
+	@Value("${security.cors.allowed-origins:http://localhost:4200,http://localhost:3000}")
+	private List<String> corsAllowedOrigins;
 
 	// ════════════════════════════════════════════════════════════════════════════
 	// SECURITY FILTER CHAIN
@@ -106,8 +111,8 @@ public class SecurityConfig {
 
 						// ✅ Truly public endpoints — no token required
 						.requestMatchers(PUBLIC_AUTH_MATCHERS).permitAll().requestMatchers(PUBLIC_USER_MATCHERS)
-						.permitAll().requestMatchers(SWAGGER_MATCHERS).permitAll().requestMatchers("/actuator/**")
-						.permitAll()
+						.permitAll().requestMatchers(SWAGGER_MATCHERS).permitAll().requestMatchers("/actuator/health")
+						.permitAll().requestMatchers("/actuator/**").hasRole("ADMIN")
 
 						// ✅ Preflight OPTIONS requests — always allow (for CORS)
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -136,7 +141,8 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration config = new CorsConfiguration();
-		config.setAllowedOrigins(CORS_ALLOWED_ORIGINS);
+		// ✅ FIXED: Use configurable CORS origins from application.properties
+		config.setAllowedOrigins(corsAllowedOrigins);
 		config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
 		config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "X-Requested-With"));
 		config.setExposedHeaders(List.of("Authorization")); // allow frontend to read Authorization header

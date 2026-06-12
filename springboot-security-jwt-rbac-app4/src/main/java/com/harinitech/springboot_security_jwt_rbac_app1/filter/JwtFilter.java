@@ -142,8 +142,9 @@ public class JwtFilter extends OncePerRequestFilter {
 
 			String requestPath = request.getRequestURI();
 
-			boolean allowedPath = requestPath.startsWith("/auth/change-password")
-					|| requestPath.startsWith("/auth/logout");
+			boolean allowedPath = requestPath.startsWith("/api/v1/users/change-password")
+					|| requestPath.startsWith("/api/v1/auth/logout")
+					|| requestPath.startsWith("/api/v1/auth/logout-all");
 
 			if (user.isForcePasswordChange() && !allowedPath) {
 

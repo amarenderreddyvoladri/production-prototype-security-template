@@ -147,9 +147,9 @@ public class AuthServiceImpl implements IAuthService {
 			throw new RuntimeException("Your account is locked due to multiple failed attempts.");
 		}
 
-		if (user.isForcePasswordChange()) {
-			throw new RuntimeException("Password reset required. Please change your password before login.");
-		}
+//		if (user.isForcePasswordChange()) {
+//			throw new RuntimeException("Password reset required. Please change your password before login.");
+//		}
 
 		// Step 4: Revoke existing tokens (single active session per device policy)
 		revokeAllActiveTokens(user);

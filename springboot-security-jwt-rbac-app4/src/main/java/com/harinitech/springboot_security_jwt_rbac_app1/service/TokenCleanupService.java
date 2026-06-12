@@ -10,6 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.harinitech.springboot_security_jwt_rbac_app1.entity.UserToken;
 import com.harinitech.springboot_security_jwt_rbac_app1.repo.UserTokenRepository;
 
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 @Service
 public class TokenCleanupService {
 
@@ -47,6 +50,7 @@ public class TokenCleanupService {
 
 		userTokenRepository.deleteAllByRefreshExpiryBefore(now);
 
-		System.out.println("🧹 Expired tokens cleaned at: " + now);
+		// ✅ FIXED: Replaced System.out.println with proper logging
+		log.info("🧹 Expired tokens cleaned at: {} | tokensMarkedExpired: {}", now, expiredAccessTokens.size());
 	}
 }

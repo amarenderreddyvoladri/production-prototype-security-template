@@ -111,7 +111,7 @@ public interface IAdminService {
 	// ========================
 	ResponseEntity<?> getPendingRegistrations(Pageable pageable);
 
-	ResponseEntity<?> approveRegistration(Long userId, String assignedRole);
+	ResponseEntity<?> approveRegistration(Long userId);
 
 	ResponseEntity<?> rejectRegistration(Long userId, String reason);
 }

@@ -27,66 +27,19 @@ public class RoleInitializationService implements CommandLineRunner {
 	@Override
 	public void run(String... args) {
 
-		// ==================== STEP 1: CREATE ALL PERMISSIONS ====================
-		List<String> allPermissions = List.of(
-
-				// =========================================================================
-				// 👤 USER MANAGEMENT
-				// =========================================================================
-
-				"READ_USER", "CREATE_USER", "UPDATE_USER", "DELETE_USER", "VIEW_USERS",
-
-				// =========================================================================
-				// 🔘 USER STATUS & ACCESS CONTROL
-				// =========================================================================
-
-				"UPDATE_USER_STATUS", "TOGGLE_USER_ACCESS", "ACCOUNT_LOCK", "ACCOUNT_UNLOCK",
-
-				// =========================================================================
-				// 🔐 SESSION & TOKEN SECURITY
-				// =========================================================================
-
-				"FORCE_LOGOUT", "REVOKE_TOKEN", "SESSION_REVOKE",
-
-				// =========================================================================
-				// 🛡️ ROLE & RBAC MANAGEMENT
-				// =========================================================================
-
-				"ASSIGN_ADMIN", "ASSIGN_MANAGER", "ASSIGN_HR", "ASSIGN_VENDOR",
-
-				// =========================================================================
-				// 📊 AUDIT & SECURITY MONITORING
-				// =========================================================================
-
-				"VIEW_AUDIT_LOGS", "VIEW_SECURITY_EVENTS", "VIEW_AUDIT_DASHBOARD", "VIEW_SECURITY_STATISTICS",
-				"VIEW_SYSTEM_STATISTICS",
-
-				// =========================================================================
-				// ⚙️ SYSTEM ADMINISTRATION
-				// =========================================================================
-
-				"SYSTEM_ADMIN",
-
-				// =========================================================================
-				// 🌐 GENERAL
-				// =========================================================================
-
-				"HELLO_USERS");
+		List<String> allPermissions = List.of("READ_USER", "CREATE_USER", "UPDATE_USER", "DELETE_USER", "VIEW_USERS",
+				"UPDATE_USER_STATUS", "TOGGLE_USER_ACCESS", "ACCOUNT_LOCK", "ACCOUNT_UNLOCK", "FORCE_LOGOUT",
+				"REVOKE_TOKEN", "SESSION_REVOKE", "ASSIGN_ADMIN", "ASSIGN_MANAGER", "ASSIGN_EMPLOYEE", "ASSIGN_HR",
+				"ASSIGN_VENDOR", "ASSIGN_SUPPORT", "APPROVE_REGISTRATION", "REJECT_REGISTRATION",
+				"VIEW_PENDING_REGISTRATIONS", "VIEW_AUDIT_LOGS", "VIEW_SECURITY_EVENTS", "VIEW_AUDIT_DASHBOARD",
+				"VIEW_SECURITY_STATISTICS", "VIEW_SYSTEM_STATISTICS", "SYSTEM_ADMIN", "HELLO_USERS");
 
 		allPermissions.forEach(name -> permissionRepository.findByName(name).orElseGet(() -> {
-
 			Permission permission = new Permission();
-
 			permission.setName(name);
-
-			log.info("✅ Permission created: {}", name);
-
+			log.info("Permission created: {}", name);
 			return permissionRepository.save(permission);
 		}));
-
-		// =========================================================================
-		// 📌 FETCH PERMISSIONS
-		// =========================================================================
 
 		Permission readUser = get("READ_USER");
 		Permission createUser = get("CREATE_USER");
@@ -105,8 +58,14 @@ public class RoleInitializationService implements CommandLineRunner {
 
 		Permission assignAdmin = get("ASSIGN_ADMIN");
 		Permission assignManager = get("ASSIGN_MANAGER");
+		Permission assignEmployee = get("ASSIGN_EMPLOYEE");
 		Permission assignHR = get("ASSIGN_HR");
 		Permission assignVendor = get("ASSIGN_VENDOR");
+		Permission assignSupport = get("ASSIGN_SUPPORT");
+
+		Permission approveRegistration = get("APPROVE_REGISTRATION");
+		Permission rejectRegistration = get("REJECT_REGISTRATION");
+		Permission viewPendingRegistrations = get("VIEW_PENDING_REGISTRATIONS");
 
 		Permission viewAuditLogs = get("VIEW_AUDIT_LOGS");
 		Permission viewSecurityEvents = get("VIEW_SECURITY_EVENTS");
@@ -115,33 +74,25 @@ public class RoleInitializationService implements CommandLineRunner {
 		Permission viewSystemStatistics = get("VIEW_SYSTEM_STATISTICS");
 
 		Permission systemAdmin = get("SYSTEM_ADMIN");
-
 		Permission helloUsers = get("HELLO_USERS");
 
-		// ==================== STEP 3: SYNC ROLES WITH PERMISSIONS ====================
-
-		// 🔴 ADMIN — full access to everything
 		createOrUpdateRole("ADMIN",
 				Set.of(readUser, createUser, updateUser, deleteUser, updateUserStatus, toggleUserAccess, forceLogout,
-						assignAdmin, assignManager, assignHR, assignVendor, helloUsers, viewUsers, viewAuditLogs,
-						viewSecurityEvents, viewAuditDashboard, systemAdmin, viewSecurityStatistics,
-						viewSystemStatistics, accountLock, accountUnlock, revokeToken, sessionRevoke));
+						assignAdmin, assignManager, assignEmployee, assignHR, assignVendor, assignSupport, viewUsers,
+						viewAuditLogs, viewSecurityEvents, viewAuditDashboard, systemAdmin, viewSecurityStatistics,
+						viewSystemStatistics, accountLock, accountUnlock, revokeToken, sessionRevoke,
+						approveRegistration, rejectRegistration, viewPendingRegistrations, helloUsers));
 
-		// 🟠 MANAGER — can manage HR and VENDOR users, read & create
 		createOrUpdateRole("MANAGER",
-				Set.of(readUser, createUser, updateUser, assignHR, assignVendor, helloUsers, viewUsers));
+				Set.of(readUser, createUser, updateUser, assignEmployee, assignHR, assignVendor, assignSupport,
+						approveRegistration, rejectRegistration, viewPendingRegistrations, viewUsers, helloUsers));
 
-		// 🟡 HR — read-only access
 		createOrUpdateRole("HR", Set.of(readUser, helloUsers));
-
-		// 🟢 USER — basic access
+		createOrUpdateRole("EMPLOYEE", Set.of(helloUsers));
+		createOrUpdateRole("SUPPORT", Set.of(readUser, helloUsers));
 		createOrUpdateRole("USER", Set.of(helloUsers));
-
-		// ⚪ VENDOR — no permissions
 		createOrUpdateRole("VENDOR", Set.of());
 	}
-
-	// ==================== HELPERS ====================
 
 	private Permission get(String name) {
 		return permissionRepository.findByName(name)
@@ -156,6 +107,6 @@ public class RoleInitializationService implements CommandLineRunner {
 		});
 		role.setPermissions(permissions);
 		roleRepository.save(role);
-		log.info("✅ Role synced: {} with {} permissions", roleName, permissions.size());
+		log.info("Role synced: {} with {} permissions", roleName, permissions.size());
 	}
 }
