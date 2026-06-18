@@ -9,6 +9,7 @@ import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 
 @Configuration
 public class SwaggerConfig {
@@ -30,8 +31,10 @@ public class SwaggerConfig {
 						new SecurityScheme().name(SECURITY_SCHEME_NAME).type(SecurityScheme.Type.HTTP).scheme("bearer")
 								.bearerFormat("JWT")
 								.description("Paste your JWT access token here. Example: eyJhbGci...")))
-
 				// ✅ Apply JWT globally to ALL endpoints
-				.addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME));
+				.addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
+
+				// 🟢 ADD THIS LINE:
+				.addServersItem(new Server().url("/").description("Default Server (Relative Path)"));
 	}
 }

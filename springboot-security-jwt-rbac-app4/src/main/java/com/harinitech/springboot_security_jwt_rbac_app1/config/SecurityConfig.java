@@ -79,7 +79,7 @@ public class SecurityConfig {
 
 	// ✅ FIXED: Made CORS origins configurable via application.properties
 	// Fallback to localhost for development, should be overridden in production
-	@Value("${security.cors.allowed-origins:http://localhost:4200,http://localhost:3000}")
+	@Value("${allowed.origins:http://localhost:4200,http://localhost:3000}")
 	private List<String> corsAllowedOrigins;
 
 	// ════════════════════════════════════════════════════════════════════════════
