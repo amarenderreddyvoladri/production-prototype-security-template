@@ -8,6 +8,9 @@ RUN mvn -B -ntp clean package -DskipTests
 
 # ---- Runtime stage ----
 FROM eclipse-temurin:21-jre-jammy
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends wget \
+	&& rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 RUN groupadd --system spring \
