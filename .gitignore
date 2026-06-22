@@ -35,6 +35,8 @@ HELP.md
 .env
 .env.*
 *.env
+# Allow templates/examples
+!.env.example
 
 application-secret.properties
 application-secret.yml
