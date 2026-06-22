@@ -1,0 +1,6 @@
+# CI overlay: seed test users for stack smoke tests (not used in production deploys).
+services:
+  security-service:
+    environment:
+      APP_INIT_USERS: "true"
+      APP_INIT_DEFAULT_PASSWORD: "ChangeMe@123!"
