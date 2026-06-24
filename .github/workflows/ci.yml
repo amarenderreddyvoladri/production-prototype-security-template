@@ -133,14 +133,44 @@ jobs:
       - name: Verify Eureka dashboard is reachable
         run: curl -fsS http://localhost:8761/ > /tmp/eureka.html
 
+      - name: Wait for security service registration
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8761/eureka/apps/SPRINGBOOT-SECURITY-JWT-RBAC-APP1 | grep -q "<status>UP</status>"; then
+              echo "Security service is registered in Eureka"
+              exit 0
+            fi
+
+            echo "Waiting for security service in Eureka... ($i/60)"
+            docker compose ${{ env.COMPOSE_FILES }} ps
+            sleep 5
+          done
+
+          echo "Security service did not register in Eureka"
+          docker compose ${{ env.COMPOSE_FILES }} logs --no-color --tail=300
+          exit 1
+
       - name: Smoke test login through gateway
         run: |
-          curl -fsS -X POST http://localhost:8085/api/v1/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"username":"admin1@test.com","password":"Password@123"}' \
-            | tee /tmp/login-response.json
+          for i in $(seq 1 30); do
+            status=$(curl -sS -o /tmp/login-response.json -w "%{http_code}" \
+              -X POST http://localhost:8085/api/v1/auth/login \
+              -H "Content-Type: application/json" \
+              -d '{"username":"admin1@test.com","password":"Password@123"}')
 
-          grep -Eq '"accessToken"|"token"' /tmp/login-response.json
+            cat /tmp/login-response.json || true
+
+            if [ "$status" = "200" ] && grep -Eq '"accessToken"|"token"' /tmp/login-response.json; then
+              echo "Login smoke test passed"
+              exit 0
+            fi
+
+            echo "Login not ready yet. HTTP status=$status ($i/30)"
+            sleep 5
+          done
+
+          docker compose ${{ env.COMPOSE_FILES }} logs --no-color --tail=300
+          exit 1
 
       - name: Collect Compose diagnostics
         if: failure()
