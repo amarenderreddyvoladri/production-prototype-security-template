@@ -124,6 +124,8 @@ services:
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      EUREKA_CLIENT_ENABLED: "true"
+      SPRING_CLOUD_DISCOVERY_ENABLED: "true"
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       SPRING_CLOUD_CONFIG_URI: http://config-server:8888
     healthcheck:

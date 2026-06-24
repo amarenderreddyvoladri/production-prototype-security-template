@@ -13,6 +13,10 @@ WORKDIR /app
 RUN groupadd --system spring \
 	&& useradd --system --gid spring --home-dir /app spring
 
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends wget \
+	&& rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/target/*.jar /app/app.jar
 RUN chown -R spring:spring /app
 USER spring
