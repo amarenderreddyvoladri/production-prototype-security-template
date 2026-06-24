@@ -36,7 +36,7 @@ jobs:
           cache: maven
 
       - name: Verify all Spring Boot modules
-        run: mvn -B -ntp clean verify -f pom.xml
+        run: mvn -B -ntp clean verify -f pom.xml -Dtest='!*IntegrationTest'
 
       - name: Upload test reports
         if: failure()

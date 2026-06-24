@@ -15,7 +15,7 @@ import com.harinitech.springboot_security_jwt_rbac_app1.support.AbstractSecurity
 class AuthControllerIntegrationTest extends AbstractSecurityIntegrationTest {
 
 	private static final String ADMIN_EMAIL = "admin1@test.com";
-	private static final String ADMIN_PASSWORD = "ChangeMe@123!";
+	private static final String ADMIN_PASSWORD = "Password@123";
 
 	@Test
 	@DisplayName("POST /api/v1/auth/login returns access and refresh tokens for valid admin credentials")
