@@ -28,6 +28,7 @@ public class TokenCleanupService {
 	public void cleanupExpiredRefreshTokens() {
 
 		Instant now = Instant.now();
+		log.info("Token cleanup job started at: {}", now);
 
 		// ===============================
 		// MARK ACCESS TOKENS AS EXPIRED
@@ -50,7 +51,6 @@ public class TokenCleanupService {
 
 		userTokenRepository.deleteAllByRefreshExpiryBefore(now);
 
-		// ✅ FIXED: Replaced System.out.println with proper logging
-		log.info("🧹 Expired tokens cleaned at: {} | tokensMarkedExpired: {}", now, expiredAccessTokens.size());
+		log.info("Token cleanup job completed | tokensMarkedExpired: {}", expiredAccessTokens.size());
 	}
 }
