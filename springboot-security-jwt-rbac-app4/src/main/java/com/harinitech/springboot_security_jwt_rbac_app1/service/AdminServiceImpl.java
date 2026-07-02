@@ -594,6 +594,8 @@ public class AdminServiceImpl implements IAdminService {
 		}
 
 		user.setAccountLocked(false);
+		user.setFailedLoginAttempts(0);
+		user.setLockTime(null);
 		userRepository.save(user);
 
 		// ✅ FIXED: notify user of account unlock via NotificationFacade
