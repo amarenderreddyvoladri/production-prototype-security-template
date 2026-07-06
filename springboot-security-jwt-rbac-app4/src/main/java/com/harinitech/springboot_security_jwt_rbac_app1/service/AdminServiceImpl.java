@@ -230,7 +230,7 @@ public class AdminServiceImpl implements IAdminService {
 
 		requirePermission("FORCE_LOGOUT");
 
-		guardSelf(userId, "force logout");
+		guardSelf(userId, "force logout"); // ✅ runs FIRST, before any fetch/mutation
 
 		User user = getUserOrThrow(userId);
 		int revokedCount = revokeAllActiveTokens(user);
