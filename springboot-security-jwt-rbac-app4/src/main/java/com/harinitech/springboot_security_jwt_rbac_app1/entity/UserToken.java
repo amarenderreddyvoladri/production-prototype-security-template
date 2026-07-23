@@ -9,6 +9,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -17,7 +18,11 @@ import lombok.Data;
 
 @Entity
 @Data
-@Table(name = "user_tokens")
+@Table(name = "user_tokens", indexes = {
+		@Index(name = "idx_user_tokens_access_token", columnList = "accessToken"),
+		@Index(name = "idx_user_tokens_refresh_token", columnList = "refreshToken"),
+		@Index(name = "idx_user_tokens_user_id", columnList = "user_id")
+})
 public class UserToken extends Auditable {
 
 	@Id
