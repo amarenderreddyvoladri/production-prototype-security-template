@@ -47,21 +47,29 @@ public class AuthController {
 	// ======================== 🔄 REFRESH ========================
 
 	@PostMapping("/refresh-token")
-	public ResponseEntity<ApiResponse<?>> refreshToken(@RequestBody Map<String, String> request,
+	public ResponseEntity<?> refreshToken(@RequestBody Map<String, String> request,
 			HttpServletRequest httpRequest) {
 
-		return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully",
-				authService.refreshToken(request.get("refreshToken"), httpRequest).getBody()));
+		ResponseEntity<?> serviceResponse = authService.refreshToken(request.get("refreshToken"), httpRequest);
+		if (serviceResponse.getStatusCode().is2xxSuccessful()) {
+			return ResponseEntity.status(serviceResponse.getStatusCode())
+					.body(ApiResponse.success("Token refreshed successfully", serviceResponse.getBody()));
+		}
+		return serviceResponse;
 	}
 
 	// ======================== ✅ VALIDATE ========================
 
 	@PostMapping("/validate-token")
-	public ResponseEntity<ApiResponse<?>> validateToken(@RequestBody Map<String, String> request,
+	public ResponseEntity<?> validateToken(@RequestBody Map<String, String> request,
 			HttpServletRequest httpRequest) {
 
-		return ResponseEntity.ok(ApiResponse.success("Token validation completed",
-				authService.validateToken(request.get("token"), httpRequest).getBody()));
+		ResponseEntity<?> serviceResponse = authService.validateToken(request.get("token"), httpRequest);
+		if (serviceResponse.getStatusCode().is2xxSuccessful()) {
+			return ResponseEntity.status(serviceResponse.getStatusCode())
+					.body(ApiResponse.success("Token validation completed", serviceResponse.getBody()));
+		}
+		return serviceResponse;
 	}
 
 	// ======================== 🚪 LOGOUT ========================
