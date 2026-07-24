@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 
 import jakarta.annotation.PostConstruct;
@@ -122,7 +121,7 @@ public class JwtUtility {
 	private String buildToken(Map<String, Object> claims, String subject, long expiration) {
 		return Jwts.builder().setClaims(claims).setSubject(subject).setIssuedAt(new Date())
 				.setExpiration(new Date(System.currentTimeMillis() + expiration))
-				.signWith(key, SignatureAlgorithm.HS256).compact();
+				.signWith(key).compact();
 	}
 
 	// ===================== EXTRACTION =====================
