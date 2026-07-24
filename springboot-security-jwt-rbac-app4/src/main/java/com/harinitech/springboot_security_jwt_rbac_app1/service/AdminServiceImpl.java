@@ -60,6 +60,8 @@ public class AdminServiceImpl implements IAdminService {
 
 	private final NotificationFacade notificationFacade;
 
+	private final RedisLoginAttemptService redisLoginAttemptService;
+
 	// ======================== 📋 READ ========================
 
 	@Override
@@ -597,6 +599,8 @@ public class AdminServiceImpl implements IAdminService {
 		user.setFailedLoginAttempts(0);
 		user.setLockTime(null);
 		userRepository.save(user);
+
+		redisLoginAttemptService.reset(user.getUsername());
 
 		// ✅ FIXED: notify user of account unlock via NotificationFacade
 		notificationFacade.sendNotification(user.getUsername(), NotificationType.ACCOUNT_UNLOCKED);

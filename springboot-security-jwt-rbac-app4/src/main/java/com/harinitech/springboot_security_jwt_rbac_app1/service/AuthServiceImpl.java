@@ -81,6 +81,9 @@ public class AuthServiceImpl implements IAuthService {
 	@Autowired
 	private LoginAttemptService loginAttemptService;
 
+	@Autowired
+	private RedisLoginAttemptService redisLoginAttemptService;
+
 	@Value("${security.account.lock-duration-ms}")
 	private long lockDuration;
 
@@ -187,6 +190,8 @@ public class AuthServiceImpl implements IAuthService {
 			user.setLockTime(null);
 
 			userRepository.saveAndFlush(user);
+
+			redisLoginAttemptService.reset(user.getUsername());
 
 			log.info("ACCOUNT AUTO UNLOCKED | userId={}", user.getId());
 
