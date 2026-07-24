@@ -460,23 +460,19 @@ public class UserServiceImpl implements IUserService {
 
 		String normalizedEmail = normalize(email);
 
+		// ✅ ATTEMPT TRACKING
+		if (token.getAttempts() >= 5) {
+			log.warn("OTP BLOCKED | email={} | attempts={}", email, token.getAttempts());
+			throw new RuntimeException("Too many attempts. Request new OTP.");
+		}
+
 		// ✅ PURPOSE CHECK
 		if (token.getPurpose() != OtpPurpose.REGISTER) {
 			throw new RuntimeException("Invalid OTP type.");
 		}
 
-//		if (token.isUsed()) {
-//			throw new RuntimeException("This OTP has already been used.");
-//		}
-
 		if (token.getExpiryTime().isBefore(Instant.now())) {
 			throw new RuntimeException("OTP has expired.");
-		}
-
-		// ✅ ATTEMPT TRACKING
-		if (token.getAttempts() >= 5) {
-			log.warn("OTP BLOCKED | email={} | attempts={}", email, token.getAttempts());
-			throw new RuntimeException("Too many attempts. Request new OTP.");
 		}
 
 		// ✅ HASH CHECK
