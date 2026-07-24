@@ -264,6 +264,8 @@ public class UserServiceImpl implements IUserService {
 //				.expiryTime(Instant.now().plusSeconds(300)).attempts(0).used(false).purpose(OtpPurpose.RESET_PASSWORD)
 //				.build();
 //
+//		otpRepository.invalidateAllActiveOtps(user.getUsername());
+//
 //		otpRepository.save(token);
 
 		// Using Redis for OTP storage instead of DB for better performance and
